@@ -2,11 +2,10 @@ const express = require('express');
 const router = express.Router();
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
-const db = require('../database');
 const { authenticator } = require('otplib');
-const qrcode = require('qrcode');
-
-const JWT_SECRET = process.env.JWT_SECRET || 'secret';
+const QRCode = require('qrcode');
+const db = require('../database');
+const { SECRET_KEY, authenticateToken } = require('../middleware/auth');
 
 // Register
 router.post('/register', async (req, res) => {
@@ -14,21 +13,28 @@ router.post('/register', async (req, res) => {
     if (!username || !password) return res.status(400).json({ error: 'Username and password required' });
 
     try {
-        const hashedPassword = await bcrypt.hash(password, 8);
-        
-        // Postgres: Use $1, $2 and RETURNING id
+        const hashedPassword = bcrypt.hashSync(password, 8);
+        const mfaSecret = authenticator.generateSecret();
+
         const result = await db.query(
-            'INSERT INTO users (username, password) VALUES ($1, $2) RETURNING id',
-            [username, hashedPassword]
+            'INSERT INTO users (username, password, mfa_secret) VALUES ($1, $2, $3) RETURNING id',
+            [username, hashedPassword, mfaSecret]
         );
-        
+
         const userId = result.rows[0].id;
-        const token = jwt.sign({ id: userId, username }, JWT_SECRET, { expiresIn: '1h' });
-        res.json({ token, username, userId });
+
+        // Check if first user, make admin
+        if (userId === 1) {
+            await db.query('UPDATE users SET role = $1 WHERE id = $2', ['admin', userId]);
+        }
+
+        const role = userId === 1 ? 'admin' : 'user';
+        const token = jwt.sign({ id: userId, username, role }, SECRET_KEY, { expiresIn: '24h' });
+        res.json({ token, userId, role, mfaSetupRequired: true });
 
     } catch (err) {
-        if (err.code === '23505') { // Unique violation code in Postgres
-             return res.status(400).json({ error: 'Username already exists' });
+        if (err.code === '23505') {
+            return res.status(400).json({ error: 'Username already taken' });
         }
         res.status(500).json({ error: err.message });
     }
@@ -37,62 +43,71 @@ router.post('/register', async (req, res) => {
 // Login
 router.post('/login', async (req, res) => {
     const { username, password, mfaToken } = req.body;
-    
+
     try {
         const result = await db.query('SELECT * FROM users WHERE username = $1', [username]);
         const user = result.rows[0];
 
-        if (!user) return res.status(400).json({ error: 'User not found' });
+        if (!user) return res.status(404).json({ error: 'User not found' });
 
-        const validPassword = await bcrypt.compare(password, user.password);
-        if (!validPassword) return res.status(400).json({ error: 'Invalid password' });
+        const passwordIsValid = bcrypt.compareSync(password, user.password);
+        if (!passwordIsValid) return res.status(401).json({ token: null, error: 'Invalid Password' });
 
-        // MFA Check
         if (user.mfa_enabled) {
-            if (!mfaToken) return res.json({ mfaRequired: true });
-            const isValid = authenticator.check(mfaToken, user.mfa_secret);
-            if (!isValid) return res.status(400).json({ error: 'Invalid MFA Token' });
+            if (!mfaToken) {
+                return res.status(403).json({ mfaRequired: true, error: 'MFA Token required' });
+            }
+            try {
+                const isValid = authenticator.check(mfaToken, user.mfa_secret);
+                if (!isValid) return res.status(401).json({ error: 'Invalid MFA Token' });
+            } catch (e) {
+                return res.status(401).json({ error: 'Invalid MFA Token format' });
+            }
         }
 
-        const token = jwt.sign({ id: user.id, username: user.username }, JWT_SECRET, { expiresIn: '1h' });
-        res.json({ token, username: user.username, userId: user.id });
+        const token = jwt.sign({ id: user.id, username: user.username, role: user.role }, SECRET_KEY, {
+            expiresIn: 86400 // 24 hours
+        });
 
+        res.status(200).json({ auth: true, token, user: { id: user.id, username: user.username, role: user.role, mfaEnabled: !!user.mfa_enabled } });
     } catch (err) {
         res.status(500).json({ error: err.message });
     }
 });
 
 // Setup MFA
-const { authenticateToken } = require('../middleware/auth');
-
-router.post('/mfa/setup', authenticateToken, async (req, res) => {
-    const secret = authenticator.generateSecret();
-    
+router.get('/mfa/setup', authenticateToken, async (req, res) => {
     try {
-        await db.query('UPDATE users SET mfa_secret = $1 WHERE id = $2', [secret, req.user.id]);
-        
-        const otpauth = authenticator.keyuri(req.user.username, 'SocialApp', secret);
-        qrcode.toDataURL(otpauth, (err, imageUrl) => {
-            if (err) return res.status(500).json({ error: 'Error generating QR code' });
-            res.json({ secret, qrCode: imageUrl });
-        });
+        const result = await db.query('SELECT mfa_secret FROM users WHERE id = $1', [req.user.id]);
+        const row = result.rows[0];
+        if (!row) return res.status(404).json({ error: 'User not found' });
+
+        const otpauth = authenticator.keyuri(req.user.username, 'SocialApp', row.mfa_secret);
+        const imageUrl = await QRCode.toDataURL(otpauth);
+        res.json({ imageUrl, secret: row.mfa_secret });
     } catch (err) {
-         res.status(500).json({ error: err.message });
+        res.status(500).json({ error: err.message });
     }
 });
 
+// Verify and Enable MFA
 router.post('/mfa/verify', authenticateToken, async (req, res) => {
     const { token } = req.body;
-    
     try {
         const result = await db.query('SELECT mfa_secret FROM users WHERE id = $1', [req.user.id]);
-        const user = result.rows[0];
+        const row = result.rows[0];
 
-        const isValid = authenticator.check(token, user.mfa_secret);
-        if (!isValid) return res.status(400).json({ error: 'Invalid Token' });
-
-        await db.query('UPDATE users SET mfa_enabled = TRUE WHERE id = $1', [req.user.id]);
-        res.json({ message: 'MFA Enabled' });
+        try {
+            const isValid = authenticator.check(token, row.mfa_secret);
+            if (isValid) {
+                await db.query('UPDATE users SET mfa_enabled = TRUE WHERE id = $1', [req.user.id]);
+                res.json({ success: true, message: 'MFA Enabled' });
+            } else {
+                res.status(400).json({ error: 'Invalid Token' });
+            }
+        } catch (e) {
+            res.status(400).json({ error: 'Invalid Token format' });
+        }
     } catch (err) {
         res.status(500).json({ error: err.message });
     }

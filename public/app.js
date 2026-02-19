@@ -1650,13 +1650,7 @@ function renderGameBoard(game) {
     const container = document.getElementById('game-board-container');
     const state = typeof game.state === 'string' ? JSON.parse(game.state) : game.state;
     
-    const titles = { 
-        'tic-tac-toe': 'Tic-Tac-Toe', 
-        'connect-four': 'Connect Four', 
-        'rock-paper-scissors': 'Rock-Paper-Scissors',
-        'dots-and-boxes': 'Dots and Boxes',
-        'word-guess': 'Word Guess'
-    };
+    const titles = { 'tic-tac-toe': 'Tic-Tac-Toe', 'connect-four': 'Connect Four', 'rock-paper-scissors': 'Rock-Paper-Scissors' };
     document.getElementById('game-title').textContent = titles[game.game_type] || 'Game';
     
     // Create board if not exists or type changed
@@ -1675,47 +1669,9 @@ function renderGameBoard(game) {
                 </div>
                 <div id="rps-reveal" class="rps-reveal" style="display:none;"></div>
             `;
-        } else if (game.game_type === 'dots-and-boxes') {
-            let html = '<div class="dots-and-boxes-container">';
-            // Render Dots (4x4)
-            for (let r = 0; r < 4; r++) {
-                for (let c = 0; c < 4; c++) {
-                    html += `<div class="db-dot" style="top:${r*90+15}px; left:${c*90+15}px;"></div>`;
-                }
-            }
-            // Horizontal Lines (12 total: 4 rows of 3)
-            for (let r = 0; r < 4; r++) {
-                for (let c = 0; c < 3; c++) {
-                    const idx = r * 3 + c;
-                    html += `<div class="db-line h-line" data-lidx="${idx}" style="top:${r*90+15}px; left:${c*90+15+10}px;" onclick="makeMove(null,null,null,${idx})"></div>`;
-                }
-            }
-            // Vertical Lines (12 total: 3 rows of 4)
-            for (let r = 0; r < 3; r++) {
-                for (let c = 0; c < 4; c++) {
-                    const idx = 12 + r * 4 + c;
-                    html += `<div class="db-line v-line" data-lidx="${idx}" style="top:${r*90+15+10}px; left:${c*90+15}px;" onclick="makeMove(null,null,null,${idx})"></div>`;
-                }
-            }
-            // Boxes (3x3 = 9)
-            for (let r = 0; r < 3; r++) {
-                for (let c = 0; c < 3; c++) {
-                    const idx = r * 3 + c;
-                    html += `<div class="db-box" id="db-box-${idx}" style="top:${r*90+15+10}px; left:${c*90+15+10}px;"></div>`;
-                }
-            }
-            html += '</div>';
-            container.innerHTML = html;
-        } else if (game.game_type === 'word-guess') {
-            container.innerHTML = `
-                <div id="wg-display" class="wg-word-display"></div>
-                <div id="wg-indicator" class="wg-wrong-badge"></div>
-                <div id="wg-keyboard" class="wg-keyboard"></div>
-            `;
         }
     }
 
-    // Update States
     if (game.game_type === 'tic-tac-toe' || game.game_type === 'connect-four') {
         const cells = container.querySelectorAll('.cell');
         state.board.forEach((val, i) => {
@@ -1751,41 +1707,6 @@ function renderGameBoard(game) {
                 btn.className = `rps-btn ${myMove === move ? 'active' : ''} ${myMove ? 'disabled' : ''}`;
             });
         }
-    } else if (game.game_type === 'dots-and-boxes') {
-        const lines = container.querySelectorAll('.db-line');
-        lines.forEach(line => {
-            const idx = parseInt(line.dataset.lidx);
-            if (state.lines[idx]) line.classList.add('drawn');
-        });
-        state.boxes.forEach((ownerId, i) => {
-            const box = document.getElementById(`db-box-${i}`);
-            if (ownerId) {
-                box.classList.add(ownerId === game.player1_id ? 'captured-p1' : 'captured-p2');
-                box.textContent = ownerId === game.player1_id ? 'X' : 'O';
-            }
-        });
-    } else if (game.game_type === 'word-guess') {
-        const wordDisplay = document.getElementById('wg-display');
-        const keyboard = document.getElementById('wg-keyboard');
-        const indicator = document.getElementById('wg-indicator');
-        
-        wordDisplay.innerHTML = state.word.split('').map(l => `
-            <div class="wg-letter-blank">${state.guesses.includes(l) ? l : ''}</div>
-        `).join('');
-        
-        indicator.textContent = `Mistakes: ${state.wrong} / ${state.maxWrong}`;
-        
-        if (game.status === 'completed' && !game.winner_id) {
-            wordDisplay.innerHTML = state.word.split('').map(l => `
-                <div class="wg-letter-blank" style="color:var(--danger)">${l}</div>
-            `).join('');
-        }
-
-        const alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'.split('');
-        keyboard.innerHTML = alphabet.map(l => `
-            <div class="wg-key ${state.guesses.includes(l) ? 'guessed' : ''}" 
-                 onclick="makeMove(null,null,null,null,'${l}')">${l}</div>
-        `).join('');
     }
 
     document.getElementById('game-p1-name').textContent = game.player1_name;
@@ -1802,24 +1723,15 @@ function renderGameBoard(game) {
         } else {
             indicator.textContent = game.current_turn_id === currentUser.id ? "Your Turn!" : "Waiting for Opponent...";
         }
-    } else {
-        clearInterval(gamePollingInterval);
-        const isCoop = game.winner_id === 'coop';
-        const msg = game.status === 'draw' ? "It's a draw!" : 
-                   (isCoop ? "Team Victory! 🎉" : 
-                   (game.winner_id === currentUser.id ? "You Won! 🎉" : 
-                   (game.winner_id ? "You Lost! 💀" : "Game Over! 💀")));
-        indicator.textContent = msg;
-        document.getElementById('game-actions').style.display = 'block';
     }
 }
 
-window.makeMove = async (index, col = null, move = null, lineIndex = null, letter = null) => {
+window.makeMove = async (index, col = null, move = null) => {
     try {
         const res = await fetch(`${API_URL}/games/${currentGameId}/move`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-            body: JSON.stringify({ index, col, move, lineIndex, letter })
+            body: JSON.stringify({ index, col, move })
         });
         if (res.ok) {
             pollGameState();

@@ -88,7 +88,7 @@ router.post('/invite/:id/respond', authenticateToken, async (req, res) => {
             const gameRes = await db.query(
                 `INSERT INTO games (game_type, player1_id, player2_id, current_turn_id, state) 
                  VALUES ($1, $2, $3, $4, $5) RETURNING id`,
-                [invite.game_type, invite.host_id, req.user.id, currentTurnId, JSON.stringify(initialState)]
+                [invite.game_type, invite.host_id, req.user.id, invite.host_id, JSON.stringify(initialState)]
             );
             
             await db.query('UPDATE game_invites SET status = $1 WHERE id = $2', ['accepted', inviteId]);
@@ -124,7 +124,7 @@ router.get('/:id', authenticateToken, async (req, res) => {
 
 // Move Logic Router
 router.post('/:id/move', authenticateToken, async (req, res) => {
-    const { index, col, move, lineIndex, letter } = req.body; // 'move' for RPS, 'lineIndex' for Dots and Boxes, 'letter' for Word Guess
+    const { index, col, move } = req.body; // 'move' for RPS
     try {
         const result = await db.query('SELECT * FROM games WHERE id = $1', [req.params.id]);
         if (result.rows.length === 0) return res.status(404).json({ error: 'Game not found' });
@@ -136,99 +136,52 @@ router.post('/:id/move', authenticateToken, async (req, res) => {
         let state = typeof game.state === 'string' ? JSON.parse(game.state) : game.state;
         let winnerId = null;
         let status = 'active';
-        let bonusTurn = false;
 
-        const symbol = game.player1_id === req.user.id ? 'X' : 'O';
+        if (game.game_type === 'tic-tac-toe' || game.game_type === 'connect-four') {
+            const symbol = game.player1_id === req.user.id ? 'X' : 'O';
+            if (game.game_type === 'tic-tac-toe') {
+                if (state.board[index] !== null) return res.status(400).json({ error: 'Square taken' });
+                state.board[index] = symbol;
 
-        if (game.game_type === 'tic-tac-toe') {
-            if (state.board[index] !== null) return res.status(400).json({ error: 'Square taken' });
-            state.board[index] = symbol;
-
-            const winPatterns = [[0,1,2],[3,4,5],[6,7,8],[0,3,6],[1,4,7],[2,5,8],[0,4,8],[2,4,6]];
-            for (const p of winPatterns) {
-                if (state.board[p[0]] && state.board[p[0]] === state.board[p[1]] && state.board[p[0]] === state.board[p[2]]) {
-                    winnerId = req.user.id; status = 'completed'; break;
-                }
-            }
-            if (!winnerId && !state.board.includes(null)) status = 'draw';
-
-        } else if (game.game_type === 'connect-four') {
-            const COLS = 7, ROWS = 6;
-            // Find lowest empty row in column 'col'
-            let row = -1;
-            for (let r = ROWS - 1; r >= 0; r--) {
-                if (state.board[r * COLS + col] === null) {
-                    row = r; break;
-                }
-            }
-            if (row === -1) return res.status(400).json({ error: 'Column full' });
-            state.board[row * COLS + col] = symbol;
-
-            // Check Connect 4 (horiz, vert, diag)
-            const check = (r, c, dr, dc) => {
-                let count = 0;
-                for (let i = 0; i < 4; i++) {
-                    const nr = r + i * dr, nc = c + i * dc;
-                    if (nr >= 0 && nr < ROWS && nc >= 0 && nc < COLS && state.board[nr * COLS + nc] === symbol) count++;
-                    else break;
-                }
-                return count === 4;
-            };
-
-            outer: for (let r = 0; r < ROWS; r++) {
-                for (let c = 0; c < COLS; c++) {
-                    if (check(r,c,0,1) || check(r,c,1,0) || check(r,c,1,1) || check(r,c,1,-1)) {
-                        winnerId = req.user.id; status = 'completed'; break outer;
+                const winPatterns = [[0,1,2],[3,4,5],[6,7,8],[0,3,6],[1,4,7],[2,5,8],[0,4,8],[2,4,6]];
+                for (const p of winPatterns) {
+                    if (state.board[p[0]] && state.board[p[0]] === state.board[p[1]] && state.board[p[0]] === state.board[p[2]]) {
+                        winnerId = req.user.id; status = 'completed'; break;
                     }
                 }
-            }
-            if (!winnerId && !state.board.includes(null)) status = 'draw';
-        } else if (game.game_type === 'dots-and-boxes') {
-            if (state.lines[lineIndex]) return res.status(400).json({ error: 'Line already drawn' });
-            state.lines[lineIndex] = true;
+                if (!winnerId && !state.board.includes(null)) status = 'draw';
 
-            // Logic to check which boxes were completed by this line
-            // Horiz: 0-11, Vert: 12-23
-            const boxesToCheck = [];
-            if (lineIndex < 12) { // Horizontal line (0-11)
-                const row = Math.floor(lineIndex / 3); // 0, 1, 2, 3
-                const col = lineIndex % 3; // 0, 1, 2
-                if (row > 0) boxesToCheck.push((row - 1) * 3 + col); // Box above
-                if (row < 3) boxesToCheck.push(row * 3 + col); // Box below
-            } else { // Vertical line (12-23)
-                const vIndex = lineIndex - 12; // 0-11
-                const row = Math.floor(vIndex / 4); // 0, 1, 2
-                const col = vIndex % 4; // 0, 1, 2, 3
-                if (col > 0) boxesToCheck.push(row * 3 + (col - 1)); // Box left
-                if (col < 3) boxesToCheck.push(row * 3 + col); // Box right
-            }
-
-            boxesToCheck.forEach(boxIdx => {
-                if (boxIdx < 0 || boxIdx >= 9) return; // Ensure boxIdx is valid (0-8 for 3x3 grid)
-                // Check if boxIdx box is complete: 
-                // Box[r,c] lines: 
-                // Horiz: r*3 + c (top), (r+1)*3 + c (bottom)
-                // Vert: 12 + r*4 + c (left), 12 + r*4 + (c+1) (right)
-                const r = Math.floor(boxIdx / 3);
-                const c = boxIdx % 3;
-                const h1 = r * 3 + c; // Top horizontal line
-                const h2 = (r + 1) * 3 + c; // Bottom horizontal line
-                const v1 = 12 + r * 4 + c; // Left vertical line
-                const v2 = 12 + r * 4 + (c + 1); // Right vertical line
-                
-                if (state.lines[h1] && state.lines[h2] && state.lines[v1] && state.lines[v2] && !state.boxes[boxIdx]) {
-                    state.boxes[boxIdx] = req.user.id;
-                    bonusTurn = true;
+            } else if (game.game_type === 'connect-four') {
+                const COLS = 7, ROWS = 6;
+                // Find lowest empty row in column 'col'
+                let row = -1;
+                for (let r = ROWS - 1; r >= 0; r--) {
+                    if (state.board[r * COLS + col] === null) {
+                        row = r; break;
+                    }
                 }
-            });
+                if (row === -1) return res.status(400).json({ error: 'Column full' });
+                state.board[row * COLS + col] = symbol;
 
-            if (!state.lines.includes(false)) { // All lines drawn, game ends
-                status = 'completed';
-                const p1Score = state.boxes.filter(b => b === game.player1_id).length;
-                const p2Score = state.boxes.filter(b => b === game.player2_id).length;
-                if (p1Score > p2Score) winnerId = game.player1_id;
-                else if (p2Score > p1Score) winnerId = game.player2_id;
-                else status = 'draw';
+                // Check Connect 4 (horiz, vert, diag)
+                const check = (r, c, dr, dc) => {
+                    let count = 0;
+                    for (let i = 0; i < 4; i++) {
+                        const nr = r + i * dr, nc = c + i * dc;
+                        if (nr >= 0 && nr < ROWS && nc >= 0 && nc < COLS && state.board[nr * COLS + nc] === symbol) count++;
+                        else break;
+                    }
+                    return count === 4;
+                };
+
+                outer: for (let r = 0; r < ROWS; r++) {
+                    for (let c = 0; c < COLS; c++) {
+                        if (check(r,c,0,1) || check(r,c,1,0) || check(r,c,1,1) || check(r,c,1,-1)) {
+                            winnerId = req.user.id; status = 'completed'; break outer;
+                        }
+                    }
+                }
+                if (!winnerId && !state.board.includes(null)) status = 'draw';
             }
         } else if (game.game_type === 'rock-paper-scissors') {
             const isP1 = req.user.id === game.player1_id;
@@ -257,36 +210,15 @@ router.post('/:id/move', authenticateToken, async (req, res) => {
                     status = 'completed';
                 }
             }
-        } else if (game.game_type === 'word-guess') {
-            const guessedLetter = letter.toUpperCase();
-            if (!/^[A-Z]$/.test(guessedLetter)) return res.status(400).json({ error: 'Invalid guess. Must be a single letter.' });
-            if (state.guesses.includes(guessedLetter)) return res.status(400).json({ error: 'Letter already guessed' });
-            
-            state.guesses.push(guessedLetter);
-
-            if (!state.word.includes(guessedLetter)) {
-                state.wrong++;
-            }
-
-            const revealed = state.word.split('').every(l => state.guesses.includes(l));
-            if (revealed) {
-                status = 'completed';
-                winnerId = 'coop'; // Cooperative win for word guess
-            } else if (state.wrong >= state.maxWrong) {
-                status = 'completed';
-                winnerId = null; // Loss (no winner)
-            }
         }
 
-        let nextTurnId = game.current_turn_id;
+        let nextTurnId = null;
         if (status === 'active') {
             if (game.game_type === 'rock-paper-scissors') {
-                nextTurnId = null; 
-            } else if (!bonusTurn) { 
+                nextTurnId = null; // Keep null for simultaneous moves
+            } else {
                 nextTurnId = (game.player1_id === req.user.id ? game.player2_id : game.player1_id);
             }
-        } else {
-            nextTurnId = null;
         }
 
         await db.query('UPDATE games SET state = $1, status = $2, current_turn_id = $3, winner_id = $4, updated_at = NOW() WHERE id = $5',

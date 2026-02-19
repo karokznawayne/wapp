@@ -221,6 +221,7 @@ function showDashboard() {
     pollingInterval = setInterval(() => {
         sendHeartbeat();
         loadChats();
+        checkGameInvites();
         if (activeChat) {
             loadMessages(true);
             checkTypingStatus();
@@ -1429,3 +1430,181 @@ document.addEventListener('DOMContentLoaded', () => {
         document.getElementById('setting-browser-notif').checked = localStorage.getItem('setting_browserNotif') === 'true';
     }
 });
+
+// ============ GAMING HUB ============
+const gameModal = document.getElementById('game-modal-overlay');
+const gamePlayModal = document.getElementById('game-play-overlay');
+let selectedGameType = null;
+let currentGameId = null;
+let gamePollingInterval = null;
+
+window.openGameHub = () => {
+    gameModal.style.display = 'flex';
+    backToGameSelection();
+};
+
+document.getElementById('close-game-modal').onclick = () => gameModal.style.display = 'none';
+
+window.backToGameSelection = () => {
+    document.getElementById('game-selection-view').style.display = 'block';
+    document.getElementById('game-invite-view').style.display = 'none';
+};
+
+window.selectGame = (type) => {
+    selectedGameType = type;
+    document.getElementById('game-selection-view').style.display = 'none';
+    document.getElementById('game-invite-view').style.display = 'block';
+    loadRecentPlayers();
+};
+
+async function loadRecentPlayers() {
+    const res = await fetch(`${API_URL}/games/recent-players`, { headers: { 'Authorization': `Bearer ${token}` } });
+    const players = await res.json();
+    const list = document.getElementById('recent-players-list');
+    
+    if (players.length === 0) {
+        list.innerHTML = '<p style="color:var(--text-muted); font-size: 0.9rem;">No recent players yet.</p>';
+    } else {
+        list.innerHTML = players.map(p => `
+            <div class="search-item" onclick="invitePlayer(${p.id})">
+                <div style="display:flex; align-items:center; gap:8px;">
+                    <div class="avatar-sm" style="background:${p.avatar_color || getAvatarColor(p.username)}">${p.username[0].toUpperCase()}</div>
+                    <span>${p.username}</span>
+                </div>
+                <button class="btn-xs">Invite</button>
+            </div>
+        `).join('');
+    }
+}
+
+window.searchGameUsers = async () => {
+    const q = document.getElementById('game-user-search').value;
+    if (q.length < 2) return;
+    
+    const res = await fetch(`${API_URL}/users/search?q=${q}`, { headers: { 'Authorization': `Bearer ${token}` } });
+    const users = await res.json();
+    const results = document.getElementById('game-search-results');
+    
+    results.innerHTML = users.map(u => `
+        <div class="search-item" onclick="invitePlayer(${u.id})">
+            <div style="display:flex; align-items:center; gap:8px;">
+                <div class="avatar-sm" style="background:${u.avatar_color || getAvatarColor(u.username)}">${u.username[0].toUpperCase()}</div>
+                <span>${u.username}</span>
+            </div>
+            <button class="btn-xs">Invite</button>
+        </div>
+    `).join('');
+};
+
+window.invitePlayer = async (guestId) => {
+    try {
+        const res = await fetch(`${API_URL}/games/invite`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+            body: JSON.stringify({ guestId, gameType: selectedGameType })
+        });
+        if (res.ok) {
+            showToast('Gaming', 'Invite sent! Wait for them to accept.');
+            gameModal.style.display = 'none';
+        }
+    } catch (e) { showToast('Error', 'Failed to send invite'); }
+};
+
+// Polling for Invites
+const seenInvites = new Set();
+async function checkGameInvites() {
+    if (!token) return;
+    try {
+        const res = await fetch(`${API_URL}/games/invites`, { headers: { 'Authorization': `Bearer ${token}` } });
+        const invites = await res.json();
+        
+        invites.forEach(inv => {
+            if (seenInvites.has(inv.id)) return;
+            seenInvites.add(inv.id);
+            
+            if (confirm(`${inv.host_name} invited you to play ${inv.game_type.toUpperCase()}!`)) {
+                respondToInvite(inv.id, 'accepted');
+            } else {
+                respondToInvite(inv.id, 'rejected');
+            }
+        });
+    } catch (e) {}
+}
+
+async function respondToInvite(inviteId, action) {
+    const res = await fetch(`${API_URL}/games/invite/${inviteId}/respond`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+        body: JSON.stringify({ action })
+    });
+    if (res.ok && action === 'accepted') {
+        const data = await res.json();
+        startLocalGame(data.gameId);
+    }
+}
+
+window.startLocalGame = (gameId) => {
+    currentGameId = gameId;
+    gamePlayModal.style.display = 'flex';
+    if (gamePollingInterval) clearInterval(gamePollingInterval);
+    pollGameState();
+    gamePollingInterval = setInterval(pollGameState, 2000);
+};
+
+document.getElementById('close-play-modal').onclick = () => {
+    gamePlayModal.style.display = 'none';
+    if (gamePollingInterval) clearInterval(gamePollingInterval);
+};
+
+async function pollGameState() {
+    if (!currentGameId) return;
+    try {
+        const res = await fetch(`${API_URL}/games/${currentGameId}`, { headers: { 'Authorization': `Bearer ${token}` } });
+        const game = await res.json();
+        renderTTTBoard(game);
+        
+        if (game.status !== 'active') {
+            clearInterval(gamePollingInterval);
+            const msg = game.status === 'draw' ? "It's a draw!" : 
+                       (game.winner_id === currentUser.id ? "You Won! 🎉" : "You Lost! 💀");
+            document.getElementById('game-turn-indicator').textContent = msg;
+        }
+    } catch (e) { }
+}
+
+function renderTTTBoard(game) {
+    const state = typeof game.state === 'string' ? JSON.parse(game.state) : game.state;
+    const board = state.board;
+    const cells = document.querySelectorAll('#ttt-board .cell');
+    
+    board.forEach((val, i) => {
+        cells[i].textContent = val || '';
+        cells[i].className = `cell ${val ? val.toLowerCase() : ''}`;
+    });
+
+    document.getElementById('game-p1-name').textContent = game.player1_name;
+    document.getElementById('game-p2-name').textContent = game.player2_name;
+    setAvatar('game-p1-avatar', game.player1_name, game.player1_color);
+    setAvatar('game-p2-avatar', game.player2_name, game.player2_color);
+
+    const indicator = document.getElementById('game-turn-indicator');
+    if (game.status === 'active') {
+        indicator.textContent = game.current_turn_id === currentUser.id ? "Your Turn!" : "Waiting for Opponent...";
+    }
+}
+
+window.makeMove = async (index) => {
+    try {
+        const res = await fetch(`${API_URL}/games/${currentGameId}/move`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+            body: JSON.stringify({ index })
+        });
+        if (res.ok) {
+            pollGameState();
+        } else {
+            const data = await res.json();
+            showToast('Game', data.error);
+        }
+    } catch (e) {}
+};

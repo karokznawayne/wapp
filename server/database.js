@@ -119,7 +119,29 @@ function initializeSchema() {
             UNIQUE(user_id, chat_type, chat_id)
         )`,
         // Promote kz to admin
-        `UPDATE users SET role = 'admin' WHERE username = 'kz'`
+        `UPDATE users SET role = 'admin' WHERE username = 'kz'`,
+        // Games Table
+        `CREATE TABLE IF NOT EXISTS games (
+            id SERIAL PRIMARY KEY,
+            game_type VARCHAR(50) NOT NULL,
+            player1_id INTEGER REFERENCES users(id),
+            player2_id INTEGER REFERENCES users(id),
+            state JSONB DEFAULT '{}',
+            status VARCHAR(20) DEFAULT 'active',
+            current_turn_id INTEGER REFERENCES users(id),
+            winner_id INTEGER REFERENCES users(id),
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )`,
+        // Game Invites
+        `CREATE TABLE IF NOT EXISTS game_invites (
+            id SERIAL PRIMARY KEY,
+            game_type VARCHAR(50) NOT NULL,
+            host_id INTEGER REFERENCES users(id),
+            guest_id INTEGER REFERENCES users(id),
+            status VARCHAR(20) DEFAULT 'pending',
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )`
     ];
 
     const executeSchemas = async () => {

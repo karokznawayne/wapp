@@ -101,6 +101,9 @@
                         <button onclick="toggleTheme()" class="icon-btn" title="Toggle Theme">
                             <span class="material-symbols-rounded">contrast</span>
                         </button>
+                        <button id="games-hub-btn" class="icon-btn" title="Gaming Hub" onclick="openGameHub()">
+                            <span class="material-symbols-rounded">sports_esports</span>
+                        </button>
                         <button id="admin-btn" class="icon-btn" style="display:none;" title="Admin Panel">
                             <span class="material-symbols-rounded">admin_panel_settings</span>
                         </button>
@@ -409,6 +412,90 @@
                     </div>
                 </div>
 
+            </div>
+        </div>
+
+        <!-- Gaming Center Modal -->
+        <div id="game-modal-overlay" style="display:none;">
+            <div class="modal-card glass" style="width: 500px; max-height: 85vh;">
+                <div class="modal-header">
+                    <h3><span class="material-symbols-rounded">sports_esports</span> Gaming Hub</h3>
+                    <button id="close-game-modal" class="icon-btn">
+                        <span class="material-symbols-rounded">close</span>
+                    </button>
+                </div>
+
+                <div id="game-selection-view">
+                    <p style="color:var(--text-secondary); margin-bottom: 1.5rem;">Choose a game to play with friends!</p>
+                    <div class="game-grid">
+                        <div class="game-tile glass" onclick="selectGame('tic-tac-toe')">
+                            <div class="game-icon">❌⭕</div>
+                            <h4>Tic-Tac-Toe</h4>
+                            <p>Classic 3x3 battle</p>
+                        </div>
+                        <div class="game-tile glass disabled">
+                            <div class="game-icon">♟️</div>
+                            <h4>Chess</h4>
+                            <p>Coming Soon</p>
+                        </div>
+                    </div>
+                </div>
+
+                <div id="game-invite-view" style="display:none;">
+                    <button class="btn-ghost" onclick="backToGameSelection()" style="margin-bottom: 1rem; padding: 0;">
+                        <span class="material-symbols-rounded">arrow_back</span> Back
+                    </button>
+                    <h3>Invite Opponent</h3>
+                    
+                    <div class="search-box" style="margin: 1rem 0;">
+                        <span class="material-symbols-rounded">search</span>
+                        <input type="text" id="game-user-search" placeholder="Type username..." oninput="searchGameUsers()">
+                    </div>
+                    <div id="game-search-results" style="max-height: 150px; overflow-y: auto; margin-bottom: 1.5rem;"></div>
+
+                    <h4>Recent Players</h4>
+                    <div id="recent-players-list" style="max-height: 150px; overflow-y: auto;">
+                        <p style="color:var(--text-muted); font-size: 0.9rem;">No recent players yet.</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Game Play Modal (Floating/Center) -->
+        <div id="game-play-overlay" style="display:none;">
+            <div class="modal-card glass game-board-card">
+                <div class="modal-header">
+                    <h3 id="game-title">Tic-Tac-Toe</h3>
+                    <button id="close-play-modal" class="icon-btn">
+                        <span class="material-symbols-rounded">close</span>
+                    </button>
+                </div>
+                
+                <div class="game-status-bar">
+                    <div class="player-info" id="p1-info">
+                        <div class="avatar-sm" id="game-p1-avatar"></div>
+                        <span id="game-p1-name">Player 1</span>
+                    </div>
+                    <div class="vs-badge">VS</div>
+                    <div class="player-info" id="p2-info">
+                        <span id="game-p2-name">Player 2</span>
+                        <div class="avatar-sm" id="game-p2-avatar"></div>
+                    </div>
+                </div>
+
+                <div id="game-turn-indicator" class="turn-indicator">Your Turn!</div>
+
+                <div id="ttt-board" class="tic-tac-toe-grid">
+                    <div class="cell" data-index="0" onclick="makeMove(0)"></div>
+                    <div class="cell" data-index="1" onclick="makeMove(1)"></div>
+                    <div class="cell" data-index="2" onclick="makeMove(2)"></div>
+                    <div class="cell" data-index="3" onclick="makeMove(3)"></div>
+                    <div class="cell" data-index="4" onclick="makeMove(4)"></div>
+                    <div class="cell" data-index="5" onclick="makeMove(5)"></div>
+                    <div class="cell" data-index="6" onclick="makeMove(6)"></div>
+                    <div class="cell" data-index="7" onclick="makeMove(7)"></div>
+                    <div class="cell" data-index="8" onclick="makeMove(8)"></div>
+                </div>
             </div>
         </div>
 

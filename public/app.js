@@ -1531,8 +1531,8 @@ async function checkGameInvites() {
             <li class="glass" style="margin-bottom:8px; padding:8px; border-radius:8px; display:flex; flex-direction:column; gap:5px;">
                 <div style="font-size:0.8rem; font-weight:600;">${inv.host_name} wants to play ${inv.game_type}</div>
                 <div style="display:flex; gap:5px;">
-                    <button class="btn-xs" style="flex:1" onclick="respondToInvite(${inv.id}, 'accepted')">Accept</button>
-                    <button class="btn-xs btn-danger" style="flex:1" onclick="respondToInvite(${inv.id}, 'rejected')">Decline</button>
+                    <button class="btn-xs" style="flex:1" onclick="respondToGameInvite(${inv.id}, 'accepted')">Accept</button>
+                    <button class="btn-xs btn-danger" style="flex:1" onclick="respondToGameInvite(${inv.id}, 'rejected')">Decline</button>
                 </div>
             </li>
         `).join('');
@@ -1559,7 +1559,7 @@ async function checkActiveGames() {
     } catch (e) {}
 }
 
-async function respondToInvite(inviteId, action) {
+window.respondToGameInvite = async (inviteId, action) => {
     const res = await fetch(`${API_URL}/games/invite/${inviteId}/respond`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
@@ -1569,6 +1569,7 @@ async function respondToInvite(inviteId, action) {
         const data = await res.json();
         startLocalGame(data.gameId);
     }
+    checkGameInvites(); // Refresh list
 }
 
 window.startLocalGame = (gameId) => {

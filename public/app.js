@@ -3,9 +3,11 @@ const API_URL = '/api';
 // State
 let currentUser = null;
 let token = localStorage.getItem('token');
-let activeChat = null; // { type: 'user' | 'group', id: number, name: string }
+let activeChat = null;
 let pollingInterval = null;
-let lastMsgCount = 0; // For detecting new messages
+let lastMsgCount = 0;
+let replyingTo = null; // { id, sender, content }
+let currentTheme = localStorage.getItem('theme') || 'dark';
 
 // DOM Elements
 const authContainer = document.getElementById('auth-container');
@@ -19,12 +21,19 @@ const mfaSetupContainer = document.getElementById('mfa-setup-container');
 const adminPanel = document.getElementById('admin-panel');
 
 // Sound
-const notificationSound = new Audio('https://raw.githubusercontent.com/xiol/notifications-sounds/refs/heads/master/src/notification-sounds/piece-of-cake-611.mp3'); 
+const notificationSound = new Audio('https://raw.githubusercontent.com/xiol/notifications-sounds/refs/heads/master/src/notification-sounds/piece-of-cake-611.mp3');
 
 // Toast Container
 const toastContainer = document.createElement('div');
 toastContainer.id = 'toast-container';
 document.body.appendChild(toastContainer);
+
+// Emoji list
+const EMOJI_LIST = ['😀','😂','😍','🥰','😎','🤣','😊','🙏','👍','👎','❤️','🔥','🎉','💯','👏','😢','😡','🤔','😱','🥳','✨','💪','🙌','🤝','👀','💀','😈','🫡','🤗','😴'];
+const REACTION_EMOJIS = ['👍','❤️','😂','😮','😢','🔥'];
+
+// Apply theme
+applyTheme(currentTheme);
 
 // Init
 if (token) {
@@ -33,7 +42,7 @@ if (token) {
     showAuth();
 }
 
-// Auth Logic
+// ============ AUTH ============
 tabLogin.addEventListener('click', () => {
     loginForm.style.display = 'flex';
     registerForm.style.display = 'none';
@@ -54,23 +63,27 @@ loginForm.addEventListener('submit', async (e) => {
     const password = document.getElementById('login-password').value;
     const mfaToken = document.getElementById('login-mfa').value;
 
-    const res = await fetch(`${API_URL}/auth/login`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ username, password, mfaToken })
-    });
-    const data = await res.json();
+    try {
+        const res = await fetch(`${API_URL}/auth/login`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ username, password, mfaToken })
+        });
+        const data = await res.json();
 
-    if (res.ok) {
-        token = data.token;
-        localStorage.setItem('token', token);
-        currentUser = data.user;
-        showDashboard();
-    } else if (res.status === 403 && data.mfaRequired) {
-        document.getElementById('login-mfa').style.display = 'block';
-        authMessage.textContent = 'MFA Code required';
-    } else {
-        authMessage.textContent = data.error;
+        if (res.ok) {
+            token = data.token;
+            localStorage.setItem('token', token);
+            currentUser = data.user;
+            showDashboard();
+        } else if (res.status === 403 && data.mfaRequired) {
+            document.getElementById('mfa-input-group').style.display = 'block';
+            authMessage.textContent = 'MFA Code required';
+        } else {
+            authMessage.textContent = data.error;
+        }
+    } catch (err) {
+        authMessage.textContent = 'Connection error. Please try again.';
     }
 });
 
@@ -79,34 +92,40 @@ registerForm.addEventListener('submit', async (e) => {
     const username = document.getElementById('reg-username').value;
     const password = document.getElementById('reg-password').value;
 
-    const res = await fetch(`${API_URL}/auth/register`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ username, password })
-    });
-    const data = await res.json();
+    try {
+        const res = await fetch(`${API_URL}/auth/register`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ username, password })
+        });
+        const data = await res.json();
 
-    if (res.ok) {
-        token = data.token;
-        localStorage.setItem('token', token);
-        currentUser = { id: data.userId, username, role: data.role }; // basic info
-        
-        // Show MFA Setup
-        authContainer.style.display = 'none';
-        setupMFA();
-    } else {
-        authMessage.textContent = data.error;
+        if (res.ok) {
+            token = data.token;
+            localStorage.setItem('token', token);
+            currentUser = { id: data.userId, username, role: data.role };
+            authContainer.style.display = 'none';
+            setupMFA();
+        } else {
+            authMessage.textContent = data.error;
+        }
+    } catch (err) {
+        authMessage.textContent = 'Connection error. Please try again.';
     }
 });
 
 // MFA Setup
 async function setupMFA() {
-    mfaSetupContainer.style.display = 'block';
-    const res = await fetch(`${API_URL}/auth/mfa/setup`, {
-        headers: { 'Authorization': `Bearer ${token}` }
-    });
-    const data = await res.json();
-    document.getElementById('qrcode-container').innerHTML = `<img src="${data.imageUrl}" alt="MFA QR Code">`;
+    mfaSetupContainer.style.display = 'flex';
+    try {
+        const res = await fetch(`${API_URL}/auth/mfa/setup`, {
+            headers: { 'Authorization': `Bearer ${token}` }
+        });
+        const data = await res.json();
+        document.getElementById('qrcode-container').innerHTML = `<img src="${data.imageUrl}" alt="MFA QR Code" style="border-radius: 12px;">`;
+    } catch (err) {
+        console.error('MFA setup error:', err);
+    }
 }
 
 document.getElementById('mfa-verify-form').addEventListener('submit', async (e) => {
@@ -114,18 +133,18 @@ document.getElementById('mfa-verify-form').addEventListener('submit', async (e) 
     const tokenInput = document.getElementById('verify-token').value;
     const res = await fetch(`${API_URL}/auth/mfa/verify`, {
         method: 'POST',
-        headers: { 
+        headers: {
             'Content-Type': 'application/json',
             'Authorization': `Bearer ${token}`
         },
         body: JSON.stringify({ token: tokenInput })
     });
-    
+
     if (res.ok) {
         mfaSetupContainer.style.display = 'none';
         showDashboard();
     } else {
-        alert('Invalid Token');
+        showToast('Error', 'Invalid MFA Token');
     }
 });
 
@@ -135,18 +154,32 @@ document.getElementById('skip-mfa').addEventListener('click', () => {
 });
 
 async function validateToken() {
-    const res = await fetch(`${API_URL}/users/me`, {
-        headers: { 'Authorization': `Bearer ${token}` }
-    });
-    if (res.ok) {
-        currentUser = await res.json();
-        showDashboard();
-    } else {
+    try {
+        const res = await fetch(`${API_URL}/users/me`, {
+            headers: { 'Authorization': `Bearer ${token}` }
+        });
+        if (res.ok) {
+            currentUser = await res.json();
+            if (currentUser.theme) {
+                currentTheme = currentUser.theme;
+                applyTheme(currentTheme);
+            }
+            showDashboard();
+        } else {
+            logout();
+        }
+    } catch (err) {
         logout();
     }
 }
 
-function logout() {
+async function logout() {
+    try {
+        await fetch(`${API_URL}/auth/logout`, {
+            method: 'POST',
+            headers: { 'Authorization': `Bearer ${token}` }
+        });
+    } catch (e) {}
     token = null;
     localStorage.removeItem('token');
     currentUser = null;
@@ -155,21 +188,21 @@ function logout() {
 }
 
 function showAuth() {
-    authContainer.style.display = 'block';
+    authContainer.style.display = 'flex';
     dashboardContainer.style.display = 'none';
     mfaSetupContainer.style.display = 'none';
     authMessage.textContent = '';
 }
 
-// Dashboard Logic
+// ============ DASHBOARD ============
 function showDashboard() {
     authContainer.style.display = 'none';
     dashboardContainer.style.display = 'flex';
     document.getElementById('current-username').textContent = currentUser.username;
     setAvatar('my-avatar', currentUser.username);
-    
+
     if (currentUser.role === 'admin') {
-        document.getElementById('admin-btn').style.display = 'block';
+        document.getElementById('admin-btn').style.display = 'flex';
     }
 
     // Request Notification Permission
@@ -177,19 +210,34 @@ function showDashboard() {
         Notification.requestPermission();
     }
 
-    loadChats(); // Load both friends and groups
-    
-    // Start Polling for messages
+    loadChats();
+
+    // Polling
     if (pollingInterval) clearInterval(pollingInterval);
     pollingInterval = setInterval(() => {
-        loadChats(); 
-        if (activeChat) loadMessages(true);
+        sendHeartbeat();
+        loadChats();
+        if (activeChat) {
+            loadMessages(true);
+            checkTypingStatus();
+        }
+        updateUnreadTitle();
     }, 3000);
 }
 
 document.getElementById('logout-btn').addEventListener('click', logout);
 
-// Friends & Search
+// Heartbeat
+async function sendHeartbeat() {
+    try {
+        await fetch(`${API_URL}/users/heartbeat`, {
+            method: 'POST',
+            headers: { 'Authorization': `Bearer ${token}` }
+        });
+    } catch (e) {}
+}
+
+// ============ SEARCH ============
 document.getElementById('search-btn').addEventListener('click', async () => {
     const query = document.getElementById('user-search').value;
     if (!query) return;
@@ -199,11 +247,11 @@ document.getElementById('search-btn').addEventListener('click', async () => {
     const users = await res.json();
     const results = document.getElementById('search-results');
     results.style.display = 'block';
-    if (users.length === 0) results.innerHTML = '<div style="padding:1rem;">No users found</div>';
+    if (users.length === 0) results.innerHTML = '<div style="padding:1rem; color: var(--text-muted);">No users found</div>';
     else results.innerHTML = users.map(u => `
         <div class="search-item">
             <div style="display:flex; align-items:center; gap:10px;">
-                <div class="avatar" style="width:30px; height:30px; font-size:0.8rem; background:${getAvatarColor(u.username)}">${u.username[0].toUpperCase()}</div>
+                <div class="avatar" style="width:32px; height:32px; font-size:0.8rem; background:${getAvatarColor(u.username)}">${u.username[0].toUpperCase()}</div>
                 <span>${u.username}</span>
             </div>
             <button onclick="sendFriendRequest(${u.id})">Add</button>
@@ -211,7 +259,11 @@ document.getElementById('search-btn').addEventListener('click', async () => {
     `).join('');
 });
 
-// Close search on outside click
+// Enter key for search
+document.getElementById('user-search').addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') document.getElementById('search-btn').click();
+});
+
 document.addEventListener('click', (e) => {
     if (!e.target.closest('.search-box')) {
         document.getElementById('search-results').style.display = 'none';
@@ -225,100 +277,112 @@ window.sendFriendRequest = async (id) => {
         body: JSON.stringify({ targetUserId: id })
     });
     const data = await res.json();
-    showNotification('System', data.message || data.error);
+    showToast('Friends', data.message || data.error);
     document.getElementById('search-results').style.display = 'none';
 };
 
-/* Unified Chat Loading */
+// ============ CHAT LOADING ============
 async function loadChats() {
-    // 1. Load Friends (DMs)
-    const resFriends = await fetch(`${API_URL}/users/friends`, {
-        headers: { 'Authorization': `Bearer ${token}` }
-    });
-    const friends = await resFriends.json();
-    
-    // 2. Load Groups
-    const resGroups = await fetch(`${API_URL}/groups`, {
-        headers: { 'Authorization': `Bearer ${token}` }
-    });
-    const groups = await resGroups.json();
+    try {
+        const [resFriends, resGroups] = await Promise.all([
+            fetch(`${API_URL}/users/friends`, { headers: { 'Authorization': `Bearer ${token}` } }),
+            fetch(`${API_URL}/groups`, { headers: { 'Authorization': `Bearer ${token}` } })
+        ]);
+        const friends = await resFriends.json();
+        const groups = await resGroups.json();
 
-    const chatList = document.getElementById('chat-list');
-    const friendList = document.getElementById('friend-list'); // Pending requests here
-    const groupList = document.getElementById('group-list');
+        const chatList = document.getElementById('chat-list');
+        const friendList = document.getElementById('friend-list');
+        const groupList = document.getElementById('group-list');
 
-    // Separate pending and accepted
-    const pendingFriends = friends.filter(f => f.status === 'pending');
-    const acceptedFriends = friends.filter(f => f.status === 'accepted');
+        const pendingFriends = friends.filter(f => f.status === 'pending');
+        const acceptedFriends = friends.filter(f => f.status === 'accepted');
 
-    // Render Pending Requests
-    friendList.innerHTML = pendingFriends.map(f => {
-         if (f.user2_id === currentUser.id) {
-            return `<li>
-                <span>${f.username}</span>
-                <button class="btn-small" onclick="acceptFriend(${f.friendship_id}, event)">Accept</button>
-            </li>`;
-         } else {
-            return `<li style="opacity:0.7;">${f.username} (Pending)</li>`;
-         }
-    }).join('');
+        // Total unread counter
+        let totalUnread = 0;
+        acceptedFriends.forEach(f => { totalUnread += parseInt(f.unread_count || 0); });
 
-    // Render Active Chats (Friends)
-    chatList.innerHTML = acceptedFriends.map(f => {
-         const time = f.last_message_time ? new Date(f.last_message_time).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}) : '';
-         const isActive = activeChat && activeChat.type === 'user' && activeChat.id === f.id;
-         return `<li onclick="openChat('user', ${f.id}, '${f.username}')" class="chat-item-container ${isActive ? 'active' : ''}">
-             <div class="avatar" style="background:${getAvatarColor(f.username)}">${f.username[0].toUpperCase()}</div>
-             <div class="chat-info">
-                 <div class="top-row">
-                    <div class="chat-name">${f.username}</div>
-                    <span class="chat-time">${time}</span>
-                 </div>
-                 <div class="bottom-row">
-                    <div class="chat-preview">${f.last_message || 'Start a conversation'}</div>
-                    ${f.unread_count > 0 ? `<span class="badge">${f.unread_count}</span>` : ''}
-                 </div>
-             </div>
-         </li>`;
-    }).join('');
+        // Pending Requests
+        friendList.innerHTML = pendingFriends.map(f => {
+            if (f.user2_id === currentUser.id) {
+                return `<li>
+                    <div class="chat-item-container">
+                        <div class="avatar" style="width:36px; height:36px; font-size:0.85rem; background:${getAvatarColor(f.username)}">${f.username[0].toUpperCase()}</div>
+                        <div class="chat-info">
+                            <div class="chat-name">${f.username}</div>
+                        </div>
+                        <button class="btn-small" onclick="acceptFriend(${f.friendship_id}, event)">Accept</button>
+                    </div>
+                </li>`;
+            } else {
+                return `<li style="opacity:0.6;">
+                    <div class="chat-item-container">
+                        <div class="avatar" style="width:36px; height:36px; font-size:0.85rem; background:${getAvatarColor(f.username)}">${f.username[0].toUpperCase()}</div>
+                        <div class="chat-info"><div class="chat-name">${f.username} <span style="color:var(--text-muted); font-size:0.8em;">(Pending)</span></div></div>
+                    </div>
+                </li>`;
+            }
+        }).join('');
 
-    // Render Groups
-    console.log('Rendering groups:', groups);
-    groupList.innerHTML = groups.map(g => {
-        // Invite Pending
-        if (g.status === 'invited') {
-            console.log('Found invite for:', g.name);
-            return `
-            <li class="chat-item-container" style="cursor:default; height: auto; align-items: flex-start; background: #fff7ed; border-left: 4px solid #f59e0b;">
-                <div class="avatar" style="background:#f59e0b">✉️</div>
+        // Active Chats (Friends)
+        chatList.innerHTML = acceptedFriends.map(f => {
+            const time = f.last_message_time ? new Date(f.last_message_time).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}) : '';
+            const isActive = activeChat && activeChat.type === 'user' && activeChat.id === f.id;
+            const onlineClass = f.is_online ? 'online-indicator' : '';
+            return `<li onclick="openChat('user', ${f.id}, '${f.username}')" class="chat-item-container ${isActive ? 'active' : ''}">
+                <div class="avatar" style="background:${getAvatarColor(f.username)}">
+                    ${f.username[0].toUpperCase()}
+                    ${f.is_online ? '<span class="online-dot"></span>' : ''}
+                </div>
                 <div class="chat-info">
-                     <div class="chat-name">${g.name} <span style="font-size:0.8em; color:#d97706">(Invited)</span></div>
-                     <div style="display:flex; gap:10px; margin-top:5px;">
-                        <button class="btn-small" style="padding: 6px 12px; background: var(--primary);" onclick="respondToInvite(${g.id}, 'accept')">Accept</button>
-                        <button class="btn-small" style="padding: 6px 12px; background: var(--danger);" onclick="respondToInvite(${g.id}, 'reject')">Reject</button>
-                     </div>
+                    <div class="top-row">
+                        <div class="chat-name">${f.username}</div>
+                        <span class="chat-time">${time}</span>
+                    </div>
+                    <div class="bottom-row">
+                        <div class="chat-preview">${f.last_message || 'Start a conversation'}</div>
+                        ${parseInt(f.unread_count) > 0 ? `<span class="badge">${f.unread_count}</span>` : ''}
+                    </div>
                 </div>
             </li>`;
-        }
+        }).join('');
 
-        // Pending Join Request
-        if (g.status === 'pending') {
-             return `<li class="chat-item-container" style="opacity:0.7; cursor:default;">
-                <div class="avatar" style="background:#ccc">#</div>
-                <div class="chat-info"><div class="chat-name">${g.name} (Request Pending)</div></div>
+        // Groups
+        groupList.innerHTML = groups.map(g => {
+            if (g.status === 'invited') {
+                return `<li style="cursor:default; background: var(--accent-subtle); border-left: 3px solid var(--warning);">
+                    <div class="chat-item-container" style="align-items:flex-start;">
+                        <div class="avatar" style="background:var(--warning)">✉️</div>
+                        <div class="chat-info">
+                            <div class="chat-name">${g.name} <span style="font-size:0.75em; color:var(--warning)">(Invited)</span></div>
+                            <div style="display:flex; gap:8px; margin-top:6px;">
+                                <button class="btn-small" onclick="respondToInvite(${g.id}, 'accept')">Accept</button>
+                                <button class="btn-small" style="background:var(--danger);" onclick="respondToInvite(${g.id}, 'reject')">Decline</button>
+                            </div>
+                        </div>
+                    </div>
+                </li>`;
+            }
+            if (g.status === 'pending') {
+                return `<li style="opacity:0.5; cursor:default;">
+                    <div class="chat-item-container">
+                        <div class="avatar" style="background:var(--bg-hover)">#</div>
+                        <div class="chat-info"><div class="chat-name">${g.name} <span style="color:var(--text-muted); font-size:0.8em;">(Pending)</span></div></div>
+                    </div>
+                </li>`;
+            }
+            const isActive = activeChat && activeChat.type === 'group' && activeChat.id === g.id;
+            return `<li onclick="openChat('group', ${g.id}, '${g.name}')" class="chat-item-container ${isActive ? 'active' : ''}">
+                <div class="avatar" style="background:${getAvatarColor(g.name)}">#</div>
+                <div class="chat-info">
+                    <div class="chat-name">${g.name}</div>
+                </div>
             </li>`;
-        }
-        
-        // Active Group
-        const isActive = activeChat && activeChat.type === 'group' && activeChat.id === g.id;
-        return `
-        <li onclick="openChat('group', ${g.id}, '${g.name}')" class="chat-item-container ${isActive ? 'active' : ''}">
-            <div class="avatar" style="background:${getAvatarColor(g.name)}">#</div>
-            <div class="chat-info">
-                 <div class="chat-name">${g.name}</div>
-            </div>
-        </li>`;
-    }).join('');
+        }).join('');
+
+    } catch (err) {
+        console.error('Error loading chats:', err);
+    }
 }
 
 window.acceptFriend = async (friendshipId, event) => {
@@ -328,6 +392,7 @@ window.acceptFriend = async (friendshipId, event) => {
         headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
         body: JSON.stringify({ friendshipId })
     });
+    showToast('Friends', 'Friend request accepted! 🎉');
     loadChats();
 };
 
@@ -338,9 +403,11 @@ window.respondToInvite = async (groupId, action) => {
         headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
         body: JSON.stringify({ groupId })
     });
+    showToast('Groups', action === 'accept' ? 'Welcome to the group! 🎉' : 'Invitation declined');
     loadChats();
 };
 
+// ============ CREATE GROUP ============
 document.getElementById('create-group-btn').onclick = () => {
     document.getElementById('modal-overlay').style.display = 'flex';
 };
@@ -358,44 +425,77 @@ document.getElementById('confirm-create-group').onclick = async () => {
         body: JSON.stringify({ name })
     });
     document.getElementById('modal-overlay').style.display = 'none';
+    document.getElementById('new-group-name').value = '';
+    showToast('Groups', `Group "${name}" created! 🎉`);
     loadChats();
 };
 
-// Chat
+// ============ OPEN CHAT ============
 window.openChat = async (type, id, name) => {
     activeChat = { type, id, name };
+    replyingTo = null;
+    hideReplyBar();
+
     document.getElementById('chat-header').style.display = 'flex';
     document.getElementById('chat-title').textContent = name;
     setAvatar('chat-avatar', name);
     document.getElementById('chat-input-form').style.display = 'flex';
-    
+
     // For mobile
     document.getElementById('main-chat-area').classList.add('open');
-    document.getElementById('back-btn').style.display = 'block';
-    
-    // Group Info Button logic
+    document.getElementById('back-btn').style.display = 'flex';
+
+    // Group Info Button
     const groupInfoBtn = document.getElementById('group-info-btn');
     if (type === 'group') {
-        groupInfoBtn.style.display = 'block';
+        groupInfoBtn.style.display = 'flex';
         groupInfoBtn.onclick = () => showGroupInfo(id, name);
+        document.getElementById('chat-subtitle').textContent = 'tap ℹ️ for group info';
     } else {
         groupInfoBtn.style.display = 'none';
+        // Show online status
+        updateChatSubtitle(id);
     }
 
-    // Mark messages as read immediately
+    // Mark as read
     if (type === 'user') {
         await markAsRead(id);
     }
-    
+
     loadMessages();
-    loadChats(); // Refresh active state
+    loadChats();
 };
+
+async function updateChatSubtitle(userId) {
+    try {
+        const res = await fetch(`${API_URL}/users/friends`, { headers: { 'Authorization': `Bearer ${token}` } });
+        const friends = await res.json();
+        const friend = friends.find(f => f.id === userId);
+        if (friend) {
+            if (friend.is_online) {
+                document.getElementById('chat-subtitle').textContent = '🟢 Online';
+            } else if (friend.last_seen) {
+                const lastSeen = new Date(friend.last_seen);
+                document.getElementById('chat-subtitle').textContent = `Last seen ${formatLastSeen(lastSeen)}`;
+            }
+        }
+    } catch (e) {}
+}
+
+function formatLastSeen(date) {
+    const now = new Date();
+    const diff = now - date;
+    if (diff < 60000) return 'just now';
+    if (diff < 3600000) return `${Math.floor(diff/60000)}m ago`;
+    if (diff < 86400000) return `${Math.floor(diff/3600000)}h ago`;
+    return date.toLocaleDateString();
+}
 
 // Mobile Back Button
 document.getElementById('back-btn').onclick = () => {
-   document.getElementById('main-chat-area').classList.remove('open');
-   activeChat = null;
-   loadChats(); // Remove active state
+    document.getElementById('main-chat-area').classList.remove('open');
+    activeChat = null;
+    loadChats();
 };
 
 async function markAsRead(senderId) {
@@ -406,70 +506,132 @@ async function markAsRead(senderId) {
     });
 }
 
+// ============ MESSAGES ============
 async function loadMessages(isPoll = false) {
     if (!activeChat) return;
     const query = activeChat.type === 'group' ? `groupId=${activeChat.id}` : `userId=${activeChat.id}`;
-    const res = await fetch(`${API_URL}/messages?${query}`, {
-        headers: { 'Authorization': `Bearer ${token}` }
-    });
-    const messages = await res.json();
     
-    const container = document.getElementById('chat-messages');
+    try {
+        const res = await fetch(`${API_URL}/messages?${query}`, {
+            headers: { 'Authorization': `Bearer ${token}` }
+        });
+        const messages = await res.json();
 
-    // Notify logic
-    if (isPoll && messages.length > lastMsgCount && document.hidden) {
-        playSound();
-        const lastMsg = messages[messages.length - 1];
-        if (lastMsg.sender !== currentUser.username) {
-            showNotification(`New message from ${lastMsg.sender}`, lastMsg.content);
+        const container = document.getElementById('chat-messages');
+
+        // Notification logic
+        if (isPoll && messages.length > lastMsgCount && document.hidden) {
+            playSound();
+            const lastMsg = messages[messages.length - 1];
+            if (lastMsg.sender !== currentUser.username) {
+                showBrowserNotification(`New message from ${lastMsg.sender}`, lastMsg.content);
+            }
         }
-    }
-    if (!isPoll) lastMsgCount = messages.length; 
-    else if (messages.length > lastMsgCount) {
-        lastMsgCount = messages.length; 
-        playSound();
-    }
+        if (!isPoll) lastMsgCount = messages.length;
+        else if (messages.length > lastMsgCount) {
+            lastMsgCount = messages.length;
+            playSound();
+        }
 
-    // Only scroll if we were at bottom or it's a manual load
-    const wasAtBottom = container.scrollHeight - container.scrollTop <= container.clientHeight + 50;
-    
-    if (messages.length === 0) {
-        container.innerHTML = `<div class="placeholder"><p>No messages yet.</p></div>`;
-    } else {
-        container.innerHTML = messages.map(m => {
-            const isMe = m.sender === currentUser.username;
-            const ticks = isMe ? `<span class="ticks ${m.is_read ? 'read' : ''}">${m.is_read ? '✓✓' : '✓'}</span>` : '';
-            const time = new Date(m.timestamp).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
+        const wasAtBottom = container.scrollHeight - container.scrollTop <= container.clientHeight + 50;
+
+        if (messages.length === 0) {
+            container.innerHTML = `<div class="placeholder"><div class="placeholder-content"><div class="placeholder-icon">💬</div><p style="color:var(--text-muted)">No messages yet. Say hello!</p></div></div>`;
+        } else {
+            // Group messages by date
+            let html = '';
+            let lastDate = '';
             
-            return `<div class="message ${isMe ? 'sent' : 'received'}">
-                ${!isMe && activeChat.type === 'group' ? `<div class="message-sender">${m.sender}</div>` : ''}
-                <div>${m.content}</div>
-                <div class="message-info">
-                    <span>${time}</span>
-                    ${ticks}
-                </div>
-            </div>`;
-        }).join('');
-    }
+            messages.forEach(m => {
+                const msgDate = new Date(m.timestamp).toLocaleDateString();
+                if (msgDate !== lastDate) {
+                    lastDate = msgDate;
+                    html += `<div class="date-separator"><span>${formatDateLabel(m.timestamp)}</span></div>`;
+                }
 
-    if (!isPoll || wasAtBottom) {
-        container.scrollTop = container.scrollHeight;
-    }
-    
-    if (isPoll && activeChat.type === 'user' && !document.hidden && messages.length > 0) {
-        markAsRead(activeChat.id);
+                const isMe = m.sender === currentUser.username;
+                const ticks = isMe ? `<span class="ticks ${m.is_read ? 'read' : ''}">${m.is_read ? '✓✓' : '✓'}</span>` : '';
+                const time = new Date(m.timestamp).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
+
+                // Reactions
+                let reactionsHtml = '';
+                if (m.reactions && m.reactions !== '[]' && Array.isArray(m.reactions) && m.reactions.length > 0) {
+                    const grouped = {};
+                    m.reactions.forEach(r => {
+                        if (!grouped[r.emoji]) grouped[r.emoji] = [];
+                        grouped[r.emoji].push(r.username);
+                    });
+                    reactionsHtml = `<div class="reactions-bar">` +
+                        Object.entries(grouped).map(([emoji, users]) =>
+                            `<span class="reaction-pill ${users.includes(currentUser.username) ? 'my-reaction' : ''}" 
+                                  onclick="toggleReaction(${m.id}, '${emoji}')" 
+                                  title="${users.join(', ')}">${emoji} ${users.length > 1 ? users.length : ''}</span>`
+                        ).join('') +
+                    `</div>`;
+                }
+
+                // Reply preview
+                let replyHtml = '';
+                if (m.reply_to_id && m.reply_content) {
+                    replyHtml = `<div class="reply-preview" onclick="scrollToMessage(${m.reply_to_id})">
+                        <span class="reply-sender">${m.reply_sender || 'Unknown'}</span>
+                        <span class="reply-text">${truncate(m.reply_content, 60)}</span>
+                    </div>`;
+                }
+
+                // Deleted message
+                const content = m.deleted_for_everyone ? `<em style="opacity:0.6">🚫 This message was deleted</em>` : escapeHtml(m.content);
+
+                html += `<div class="message ${isMe ? 'sent' : 'received'}" id="msg-${m.id}" 
+                              oncontextmenu="showMessageMenu(event, ${m.id}, ${isMe}, '${escapeAttr(m.content)}', '${m.sender}')">
+                    ${!isMe && activeChat.type === 'group' ? `<div class="message-sender">${m.sender}</div>` : ''}
+                    ${replyHtml}
+                    <div>${content}</div>
+                    <div class="message-info">
+                        <span>${time}</span>
+                        ${ticks}
+                    </div>
+                    ${reactionsHtml}
+                </div>`;
+            });
+
+            container.innerHTML = html;
+        }
+
+        if (!isPoll || wasAtBottom) {
+            container.scrollTop = container.scrollHeight;
+        }
+
+        if (isPoll && activeChat.type === 'user' && !document.hidden && messages.length > 0) {
+            markAsRead(activeChat.id);
+        }
+    } catch (err) {
+        console.error('Error loading messages:', err);
     }
 }
 
+function formatDateLabel(timestamp) {
+    const date = new Date(timestamp);
+    const today = new Date();
+    const yesterday = new Date(today);
+    yesterday.setDate(yesterday.getDate() - 1);
+
+    if (date.toDateString() === today.toDateString()) return 'Today';
+    if (date.toDateString() === yesterday.toDateString()) return 'Yesterday';
+    return date.toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric' });
+}
+
+// ============ SEND MESSAGE ============
 document.getElementById('chat-input-form').addEventListener('submit', async (e) => {
     e.preventDefault();
     const input = document.getElementById('message-input');
-    const content = input.value;
+    const content = input.value.trim();
     if (!content || !activeChat) return;
 
     const body = { content };
     if (activeChat.type === 'group') body.groupId = activeChat.id;
     else body.receiverId = activeChat.id;
+    if (replyingTo) body.replyToId = replyingTo.id;
 
     await fetch(`${API_URL}/messages`, {
         method: 'POST',
@@ -477,53 +639,298 @@ document.getElementById('chat-input-form').addEventListener('submit', async (e) 
         body: JSON.stringify(body)
     });
     input.value = '';
+    replyingTo = null;
+    hideReplyBar();
     loadMessages();
 });
 
-// Group Info Logic
+// Typing indicator on input
+let typingTimeout;
+document.getElementById('message-input').addEventListener('input', () => {
+    if (!activeChat) return;
+    clearTimeout(typingTimeout);
+    const chatType = activeChat.type;
+    const chatId = activeChat.id;
+    
+    fetch(`${API_URL}/users/typing`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+        body: JSON.stringify({ chatType, chatId })
+    }).catch(() => {});
+});
+
+async function checkTypingStatus() {
+    if (!activeChat) return;
+    try {
+        const res = await fetch(`${API_URL}/users/typing?chatType=${activeChat.type}&chatId=${activeChat.id}`, {
+            headers: { 'Authorization': `Bearer ${token}` }
+        });
+        const typingUsers = await res.json();
+        const subtitle = document.getElementById('chat-subtitle');
+        if (typingUsers.length > 0) {
+            subtitle.textContent = `${typingUsers.join(', ')} typing...`;
+            subtitle.classList.add('typing-indicator');
+        } else {
+            subtitle.classList.remove('typing-indicator');
+            if (activeChat.type === 'user') {
+                updateChatSubtitle(activeChat.id);
+            } else {
+                subtitle.textContent = 'tap ℹ️ for group info';
+            }
+        }
+    } catch (e) {}
+}
+
+// ============ MESSAGE CONTEXT MENU ============
+window.showMessageMenu = (event, msgId, isMe, content, sender) => {
+    event.preventDefault();
+    
+    // Remove existing menu
+    document.querySelectorAll('.context-menu').forEach(el => el.remove());
+    
+    const menu = document.createElement('div');
+    menu.className = 'context-menu';
+    menu.innerHTML = `
+        <div class="context-item" onclick="setReply(${msgId}, '${escapeAttr(sender)}', '${escapeAttr(content)}')">
+            <span class="material-symbols-rounded">reply</span> Reply
+        </div>
+        <div class="context-item" onclick="showReactionPicker(${msgId})">
+            <span class="material-symbols-rounded">add_reaction</span> React
+        </div>
+        ${isMe ? `
+            <div class="context-item" onclick="deleteMessage(${msgId}, false)">
+                <span class="material-symbols-rounded">delete</span> Delete for me
+            </div>
+            <div class="context-item danger" onclick="deleteMessage(${msgId}, true)">
+                <span class="material-symbols-rounded">delete_forever</span> Delete for everyone
+            </div>
+        ` : ''}
+        <div class="context-item" onclick="copyMessage('${escapeAttr(content)}')">
+            <span class="material-symbols-rounded">content_copy</span> Copy
+        </div>
+    `;
+
+    // Position
+    menu.style.left = Math.min(event.clientX, window.innerWidth - 200) + 'px';
+    menu.style.top = Math.min(event.clientY, window.innerHeight - 200) + 'px';
+    document.body.appendChild(menu);
+
+    // Close on click outside
+    setTimeout(() => {
+        document.addEventListener('click', () => menu.remove(), { once: true });
+    }, 10);
+};
+
+window.setReply = (msgId, sender, content) => {
+    replyingTo = { id: msgId, sender, content };
+    showReplyBar();
+    document.getElementById('message-input').focus();
+    document.querySelectorAll('.context-menu').forEach(el => el.remove());
+};
+
+function showReplyBar() {
+    let bar = document.getElementById('reply-bar');
+    if (!bar) {
+        bar = document.createElement('div');
+        bar.id = 'reply-bar';
+        const form = document.getElementById('chat-input-form');
+        form.parentNode.insertBefore(bar, form);
+    }
+    bar.innerHTML = `
+        <div class="reply-bar-content">
+            <div class="reply-bar-line"></div>
+            <div class="reply-bar-info">
+                <span class="reply-bar-name">${replyingTo.sender}</span>
+                <span class="reply-bar-text">${truncate(replyingTo.content, 50)}</span>
+            </div>
+            <button class="icon-btn-sm" onclick="cancelReply()">
+                <span class="material-symbols-rounded">close</span>
+            </button>
+        </div>
+    `;
+    bar.style.display = 'block';
+}
+
+function hideReplyBar() {
+    const bar = document.getElementById('reply-bar');
+    if (bar) bar.style.display = 'none';
+}
+
+window.cancelReply = () => {
+    replyingTo = null;
+    hideReplyBar();
+};
+
+window.deleteMessage = async (msgId, forEveryone) => {
+    document.querySelectorAll('.context-menu').forEach(el => el.remove());
+    if (forEveryone && !confirm('Delete this message for everyone?')) return;
+    
+    await fetch(`${API_URL}/messages/${msgId}?forEveryone=${forEveryone}`, {
+        method: 'DELETE',
+        headers: { 'Authorization': `Bearer ${token}` }
+    });
+    loadMessages();
+};
+
+window.copyMessage = (content) => {
+    navigator.clipboard.writeText(content).then(() => {
+        showToast('Copied', 'Message copied to clipboard');
+    });
+    document.querySelectorAll('.context-menu').forEach(el => el.remove());
+};
+
+window.scrollToMessage = (msgId) => {
+    const el = document.getElementById(`msg-${msgId}`);
+    if (el) {
+        el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        el.classList.add('highlight');
+        setTimeout(() => el.classList.remove('highlight'), 2000);
+    }
+};
+
+// ============ REACTIONS ============
+window.showReactionPicker = (msgId) => {
+    document.querySelectorAll('.context-menu').forEach(el => el.remove());
+    document.querySelectorAll('.reaction-picker').forEach(el => el.remove());
+
+    const msgEl = document.getElementById(`msg-${msgId}`);
+    if (!msgEl) return;
+
+    const picker = document.createElement('div');
+    picker.className = 'reaction-picker';
+    picker.innerHTML = REACTION_EMOJIS.map(e => `<span onclick="toggleReaction(${msgId}, '${e}')">${e}</span>`).join('');
+    msgEl.appendChild(picker);
+
+    setTimeout(() => {
+        document.addEventListener('click', () => picker.remove(), { once: true });
+    }, 10);
+};
+
+window.toggleReaction = async (msgId, emoji) => {
+    document.querySelectorAll('.reaction-picker').forEach(el => el.remove());
+    await fetch(`${API_URL}/messages/${msgId}/react`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+        body: JSON.stringify({ emoji })
+    });
+    loadMessages();
+};
+
+// ============ EMOJI PICKER ============
+const emojiBtn = document.querySelector('.emoji-btn');
+if (emojiBtn) {
+    emojiBtn.addEventListener('click', () => {
+        let picker = document.getElementById('emoji-grid');
+        if (picker) {
+            picker.remove();
+            return;
+        }
+
+        picker = document.createElement('div');
+        picker.id = 'emoji-grid';
+        picker.className = 'emoji-grid';
+        picker.innerHTML = EMOJI_LIST.map(e => `<span class="emoji-item" onclick="insertEmoji('${e}')">${e}</span>`).join('');
+        
+        const form = document.getElementById('chat-input-form');
+        form.parentNode.insertBefore(picker, form);
+    });
+}
+
+window.insertEmoji = (emoji) => {
+    const input = document.getElementById('message-input');
+    input.value += emoji;
+    input.focus();
+    document.getElementById('emoji-grid')?.remove();
+};
+
+// ============ MESSAGE SEARCH ============
+// Add search bar to chat header on demand
+window.toggleMessageSearch = () => {
+    let searchBar = document.getElementById('msg-search-bar');
+    if (searchBar) {
+        searchBar.remove();
+        return;
+    }
+    searchBar = document.createElement('div');
+    searchBar.id = 'msg-search-bar';
+    searchBar.className = 'msg-search-bar';
+    searchBar.innerHTML = `
+        <input type="text" id="msg-search-input" placeholder="Search messages..." onkeydown="if(event.key==='Enter')searchMessages()">
+        <button class="icon-btn-sm" onclick="searchMessages()"><span class="material-symbols-rounded">search</span></button>
+        <button class="icon-btn-sm" onclick="this.parentNode.remove()"><span class="material-symbols-rounded">close</span></button>
+    `;
+    const header = document.getElementById('chat-header');
+    header.parentNode.insertBefore(searchBar, header.nextSibling);
+};
+
+window.searchMessages = async () => {
+    const q = document.getElementById('msg-search-input').value;
+    if (!q || !activeChat) return;
+
+    const params = new URLSearchParams({ q });
+    if (activeChat.type === 'group') params.set('groupId', activeChat.id);
+    else params.set('userId', activeChat.id);
+
+    const res = await fetch(`${API_URL}/messages/search?${params}`, {
+        headers: { 'Authorization': `Bearer ${token}` }
+    });
+    const results = await res.json();
+    
+    if (results.length === 0) {
+        showToast('Search', 'No messages found');
+    } else {
+        showToast('Search', `Found ${results.length} result(s)`);
+        // Scroll to first result
+        const first = document.getElementById(`msg-${results[0].id}`);
+        if (first) {
+            first.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            first.classList.add('highlight');
+            setTimeout(() => first.classList.remove('highlight'), 2000);
+        }
+    }
+};
+
+// ============ GROUP INFO ============
 async function showGroupInfo(groupId, groupName) {
     const modal = document.getElementById('group-info-modal-overlay');
     modal.style.display = 'flex';
     document.getElementById('modal-group-name').textContent = groupName;
-    
-    // Load Members
+
     const res = await fetch(`${API_URL}/groups/${groupId}/members`, {
-         headers: { 'Authorization': `Bearer ${token}` }
+        headers: { 'Authorization': `Bearer ${token}` }
     });
     const members = await res.json();
     document.getElementById('member-count').textContent = members.length;
-    
+
     const list = document.getElementById('group-member-list');
     list.innerHTML = members.map(m => `
-        <li style="cursor:default; background:transparent;">
-            <div style="display:flex; align-items:center; gap:10px;">
-                <div class="avatar" style="width:32px; height:32px; font-size:0.8rem; background:${getAvatarColor(m.username)}">${m.username[0].toUpperCase()}</div>
-                <div>
-                     <div style="font-weight:600; font-size:0.9rem;">${m.username}</div>
-                     <div style="font-size:0.75rem; color:#666;">${m.role} • ${m.status}</div>
+        <li style="cursor:default;">
+            <div class="chat-item-container">
+                <div class="avatar" style="width:34px; height:34px; font-size:0.8rem; background:${getAvatarColor(m.username)}">${m.username[0].toUpperCase()}</div>
+                <div class="chat-info">
+                    <div class="chat-name">${m.username} ${m.role === 'admin' ? '👑' : ''}</div>
+                    <div style="font-size:0.72rem; color:var(--text-muted);">${m.status}</div>
                 </div>
             </div>
-            ${m.role === 'admin' ? '👑' : ''}
         </li>
     `).join('');
 
-    // Check if I am admin
     const myMembership = members.find(m => m.username === currentUser.username);
     const actionsDiv = document.getElementById('group-actions');
-    
+
     if (myMembership && myMembership.role === 'admin') {
         actionsDiv.style.display = 'block';
-        populateFriendDropdown(groupId, members); // Only show friends NOT in group
+        populateFriendDropdown(groupId, members);
     } else {
         actionsDiv.style.display = 'none';
     }
 
     // Leave Button
     document.getElementById('leave-group-btn').onclick = async () => {
-        if (!confirm('Are you sure you want to leave this group?')) return;
+        if (!confirm('Leave this group?')) return;
         await fetch(`${API_URL}/groups/${groupId}/leave`, {
             method: 'POST',
-             headers: { 'Authorization': `Bearer ${token}` }
+            headers: { 'Authorization': `Bearer ${token}` }
         });
         modal.style.display = 'none';
         activeChat = null;
@@ -531,54 +938,31 @@ async function showGroupInfo(groupId, groupName) {
         document.getElementById('chat-input-form').style.display = 'none';
         loadChats();
     };
-    
-    // Add Member Button
+
     // Add Member Button
     const addMemberBtn = document.getElementById('add-member-btn');
-    // Remove old listeners to avoid duplicates if re-opened
     const newBtn = addMemberBtn.cloneNode(true);
     addMemberBtn.parentNode.replaceChild(newBtn, addMemberBtn);
-    
+
     newBtn.addEventListener('click', async () => {
-        console.log('Add Member button clicked');
-        const select = document.getElementById('friend-select-dropdown');
-        const userId = select.value;
-        console.log('Selected User ID:', userId);
-        
-        if (!userId) {
-            alert('Please select a friend to add.');
-            return;
-        }
-        
+        const userId = document.getElementById('friend-select-dropdown').value;
+        if (!userId) { showToast('Error', 'Select a friend first'); return; }
+
         try {
-            console.log(`Attempting to invite User ${userId} to Group ${groupId}`);
             const res = await fetch(`${API_URL}/groups/invite`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
                 body: JSON.stringify({ groupId, userId })
             });
-            
-            console.log('Invite response status:', res.status);
-            
-            if (!res.ok) {
-                const text = await res.text();
-                console.error('Invite failed response:', text);
-                try {
-                     const json = JSON.parse(text);
-                     alert(json.error || `Server Error: ${res.status}`);
-                } catch (e) {
-                     alert(`Server Error: ${res.status} - ${text}`);
-                }
-                return;
+            if (res.ok) {
+                showToast('Groups', 'Invitation sent! ✉️');
+                showGroupInfo(groupId, groupName);
+            } else {
+                const data = await res.json();
+                showToast('Error', data.error || 'Failed to invite');
             }
-
-            const d = await res.json();
-            alert('Invitation sent successfully!');
-            showGroupInfo(groupId, groupName); // Refresh
-
         } catch (e) {
-            console.error('Invite exception:', e);
-            alert(`Client Error: ${e.message}`);
+            showToast('Error', e.message);
         }
     });
 }
@@ -593,66 +977,113 @@ async function populateFriendDropdown(groupId, currentMembers) {
     });
     const friends = await res.json();
     const acceptedFriends = friends.filter(f => f.status === 'accepted');
-    
-    // Filter out existing members
     const memberIds = currentMembers.map(m => m.id);
-    const eligibleFriends = acceptedFriends.filter(f => !memberIds.includes(f.id));
-    
+    const eligible = acceptedFriends.filter(f => !memberIds.includes(f.id));
+
     const select = document.getElementById('friend-select-dropdown');
-    select.innerHTML = '<option value="">Select a friend to add...</option>' + 
-        eligibleFriends.map(f => `<option value="${f.id}">${f.username}</option>`).join('');
+    select.innerHTML = '<option value="">Select a friend...</option>' +
+        eligible.map(f => `<option value="${f.id}">${f.username}</option>`).join('');
 }
 
-// Admin
+// ============ ADMIN ============
 document.getElementById('admin-btn').onclick = async () => {
-    adminPanel.style.display = 'block';
-    
-    // Load Stats
+    adminPanel.style.display = 'flex';
+
     const statsRes = await fetch(`${API_URL}/admin/stats`, { headers: { 'Authorization': `Bearer ${token}` } });
     const stats = await statsRes.json();
     document.getElementById('admin-stats').innerHTML = `
-        <div class="stat-card"><h3>${stats.users}</h3><p>Users</p></div>
+        <div class="stat-card"><h3>${stats.users}</h3><p>Total Users</p></div>
         <div class="stat-card"><h3>${stats.groups}</h3><p>Groups</p></div>
         <div class="stat-card"><h3>${stats.messages}</h3><p>Messages</p></div>
+        <div class="stat-card"><h3>${stats.online || 0}</h3><p>Online Now</p></div>
     `;
 
-    // Load Users
     const usersRes = await fetch(`${API_URL}/admin/users`, { headers: { 'Authorization': `Bearer ${token}` } });
     const users = await usersRes.json();
     document.querySelector('#users-table tbody').innerHTML = users.map(u => `
         <tr>
             <td>${u.id}</td>
             <td>${u.username}</td>
-            <td>${u.role}</td>
-            <td>${u.mfa_enabled ? 'Enabled' : 'Disabled'}</td>
+            <td><span class="role-badge ${u.role}">${u.role}</span></td>
+            <td>${u.mfa_enabled ? '🔒' : '—'}</td>
+            <td>${u.is_online ? '🟢' : '⚫'}</td>
+            <td>
+                ${u.role !== 'admin' ? (u.role === 'banned' 
+                    ? `<button class="btn-small" onclick="adminAction('unban', ${u.id})">Unban</button>` 
+                    : `<button class="btn-small" style="background:var(--danger)" onclick="adminAction('ban', ${u.id})">Ban</button>`) 
+                : ''}
+            </td>
         </tr>
     `).join('');
+};
+
+window.adminAction = async (action, userId) => {
+    await fetch(`${API_URL}/admin/${action}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+        body: JSON.stringify({ userId })
+    });
+    showToast('Admin', `User ${action}ned successfully`);
+    document.getElementById('admin-btn').click(); // Refresh
 };
 
 document.getElementById('close-admin').onclick = () => {
     adminPanel.style.display = 'none';
 };
 
-// Utilities
-function playSound() {
-    notificationSound.play().catch(e => console.log('Audio play error', e));
+// ============ THEME TOGGLE ============
+function applyTheme(theme) {
+    document.documentElement.setAttribute('data-theme', theme);
+    localStorage.setItem('theme', theme);
+    currentTheme = theme;
 }
 
-function showNotification(title, body) {
-    if (Notification.permission === 'granted') {
-        new Notification(title, { body });
+window.toggleTheme = async () => {
+    const newTheme = currentTheme === 'dark' ? 'light' : 'dark';
+    applyTheme(newTheme);
+    // Save to server
+    try {
+        await fetch(`${API_URL}/users/profile`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+            body: JSON.stringify({ theme: newTheme })
+        });
+    } catch (e) {}
+};
+
+// ============ UNREAD TITLE ============
+function updateUnreadTitle() {
+    const badges = document.querySelectorAll('.badge');
+    let total = 0;
+    badges.forEach(b => { total += parseInt(b.textContent) || 0; });
+    document.title = total > 0 ? `(${total}) ChatVerse` : 'ChatVerse — Modern Messaging';
+}
+
+// ============ UTILITIES ============
+function playSound() {
+    notificationSound.play().catch(e => {});
+}
+
+function showBrowserNotification(title, body) {
+    if ('Notification' in window && Notification.permission === 'granted') {
+        new Notification(title, { body, icon: '💬' });
     }
+}
+
+function showToast(title, body) {
     const toast = document.createElement('div');
     toast.className = 'toast';
     toast.innerHTML = `<strong>${title}</strong><br>${body}`;
     toastContainer.appendChild(toast);
     setTimeout(() => {
-        toast.remove();
+        toast.style.opacity = '0';
+        toast.style.transform = 'translateX(100%)';
+        setTimeout(() => toast.remove(), 300);
     }, 3000);
 }
 
 function getAvatarColor(username) {
-    const colors = ['#f59e0b', '#10b981', '#3b82f6', '#8b5cf6', '#ec4899', '#ef4444'];
+    const colors = ['#f59e0b', '#10b981', '#3b82f6', '#8b5cf6', '#ec4899', '#ef4444', '#06b6d4', '#84cc16'];
     let hash = 0;
     for (let i = 0; i < username.length; i++) {
         hash = username.charCodeAt(i) + ((hash << 5) - hash);
@@ -662,7 +1093,22 @@ function getAvatarColor(username) {
 
 function setAvatar(elementId, username) {
     const el = document.getElementById(elementId);
-    if (!username) { el.style.background = '#ccc'; el.innerText = '?'; return; }
+    if (!username) { el.style.background = '#555'; el.innerText = '?'; return; }
     el.style.background = getAvatarColor(username);
     el.innerText = username[0].toUpperCase();
+}
+
+function escapeHtml(str) {
+    const div = document.createElement('div');
+    div.textContent = str;
+    return div.innerHTML;
+}
+
+function escapeAttr(str) {
+    return String(str).replace(/'/g, "\\'").replace(/"/g, '\\"').replace(/\n/g, ' ');
+}
+
+function truncate(str, len) {
+    if (!str) return '';
+    return str.length > len ? str.substring(0, len) + '...' : str;
 }

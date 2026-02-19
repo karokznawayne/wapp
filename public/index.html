@@ -98,6 +98,9 @@
                         </div>
                     </div>
                     <div class="header-actions">
+                        <button onclick="toggleTheme()" class="icon-btn" title="Toggle Theme">
+                            <span class="material-symbols-rounded">contrast</span>
+                        </button>
                         <button id="admin-btn" class="icon-btn" style="display:none;" title="Admin Panel">
                             <span class="material-symbols-rounded">admin_panel_settings</span>
                         </button>
@@ -191,7 +194,7 @@
                     <h3>All Users</h3>
                     <table id="users-table">
                         <thead>
-                            <tr><th>ID</th><th>Username</th><th>Role</th><th>MFA</th></tr>
+                            <tr><th>ID</th><th>Username</th><th>Role</th><th>MFA</th><th>Status</th><th>Actions</th></tr>
                         </thead>
                         <tbody></tbody>
                     </table>

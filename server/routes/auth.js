@@ -24,11 +24,13 @@ router.post('/register', async (req, res) => {
         const userId = result.rows[0].id;
 
         // Check if first user, make admin
-        if (userId === 1) {
+        const countResult = await db.query('SELECT COUNT(*) as count FROM users');
+        const isFirst = parseInt(countResult.rows[0].count) === 1;
+        if (isFirst) {
             await db.query('UPDATE users SET role = $1 WHERE id = $2', ['admin', userId]);
         }
 
-        const role = userId === 1 ? 'admin' : 'user';
+        const role = isFirst ? 'admin' : 'user';
         const token = jwt.sign({ id: userId, username, role }, SECRET_KEY, { expiresIn: '24h' });
         res.json({ token, userId, role, mfaSetupRequired: true });
 
@@ -65,11 +67,24 @@ router.post('/login', async (req, res) => {
             }
         }
 
+        // Set online
+        await db.query('UPDATE users SET is_online = TRUE, last_seen = NOW() WHERE id = $1', [user.id]);
+
         const token = jwt.sign({ id: user.id, username: user.username, role: user.role }, SECRET_KEY, {
-            expiresIn: 86400 // 24 hours
+            expiresIn: '24h'
         });
 
         res.status(200).json({ auth: true, token, user: { id: user.id, username: user.username, role: user.role, mfaEnabled: !!user.mfa_enabled } });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// Logout (set offline)
+router.post('/logout', authenticateToken, async (req, res) => {
+    try {
+        await db.query('UPDATE users SET is_online = FALSE, last_seen = NOW() WHERE id = $1', [req.user.id]);
+        res.json({ message: 'Logged out' });
     } catch (err) {
         res.status(500).json({ error: err.message });
     }
@@ -82,7 +97,7 @@ router.get('/mfa/setup', authenticateToken, async (req, res) => {
         const row = result.rows[0];
         if (!row) return res.status(404).json({ error: 'User not found' });
 
-        const otpauth = authenticator.keyuri(req.user.username, 'SocialApp', row.mfa_secret);
+        const otpauth = authenticator.keyuri(req.user.username, 'ChatVerse', row.mfa_secret);
         const imageUrl = await QRCode.toDataURL(otpauth);
         res.json({ imageUrl, secret: row.mfa_secret });
     } catch (err) {
@@ -108,17 +123,6 @@ router.post('/mfa/verify', authenticateToken, async (req, res) => {
         } catch (e) {
             res.status(400).json({ error: 'Invalid Token format' });
         }
-    } catch (err) {
-        res.status(500).json({ error: err.message });
-    }
-});
-
-// One-time admin setup - visit /api/auth/setup-admin to promote kz
-router.get('/setup-admin', async (req, res) => {
-    try {
-        await db.query("UPDATE users SET role = 'admin' WHERE username = 'kz'");
-        const result = await db.query("SELECT id, username, role FROM users WHERE username = 'kz'");
-        res.json({ message: 'Admin setup complete', user: result.rows[0] });
     } catch (err) {
         res.status(500).json({ error: err.message });
     }

@@ -4,7 +4,12 @@ const path = require('path');
 const fs = require('fs');
 require('dotenv').config();
 
-const connectionString = process.env.POSTGRES_URL || process.env.DATABASE_URL;
+// Multi-prefix support for Vercel/Cloud DBs
+const connectionString = process.env.POSTGRES_URL || 
+                         process.env.DATABASE_URL || 
+                         process.env.STORAGE_URL || 
+                         process.env.DB_URL;
+
 const usePostgres = !!connectionString;
 const isVercel = process.env.VERCEL === '1';
 
@@ -35,11 +40,19 @@ const query = (text, params) => {
         return new Promise((resolve, reject) => {
             // Convert Postgres $1, $2 style to SQLite ? if needed, 
             // but actually sqlite3 supports $1, $2 etc!
-            const sql = text.replace(/SERIAL PRIMARY KEY/g, 'INTEGER PRIMARY KEY AUTOINCREMENT')
+            let sql = text.replace(/SERIAL PRIMARY KEY/g, 'INTEGER PRIMARY KEY AUTOINCREMENT')
                             .replace(/JSONB/g, 'TEXT')
                             .replace(/TIMESTAMP/g, 'DATETIME')
                             .replace(/NOW\(\)/g, "CURRENT_TIMESTAMP")
                             .replace(/ILIKE/g, "LIKE");
+
+            const isInsert = sql.trim().toUpperCase().startsWith('INSERT');
+            const hasReturning = sql.toUpperCase().includes('RETURNING');
+            
+            // Strip RETURNING for standard SQLite (compatibility)
+            if (hasReturning) {
+                sql = sql.replace(/RETURNING .*/gi, '');
+            }
 
             if (sql.trim().toUpperCase().startsWith('SELECT')) {
                 sqliteDb.all(sql, params, (err, rows) => {
@@ -48,22 +61,16 @@ const query = (text, params) => {
                 });
             } else {
                 sqliteDb.run(sql, params, function(err) {
-                    if (err) reject(err);
-                    else {
-                        // Return rows for INSERT ... RETURNING id compatibility
-                        if (sql.includes('RETURNING')) {
-                             const table = sql.match(/INSERT INTO (\w+)/i)?.[1];
-                             if (table) {
-                                sqliteDb.get(`SELECT * FROM ${table} WHERE rowid = ?`, [this.lastID], (err, row) => {
-                                    if (err) reject(err);
-                                    else resolve({ rows: [row], rowCount: 1 });
-                                });
-                             } else {
-                                resolve({ rows: [{ id: this.lastID }], rowCount: 1 });
-                             }
-                        } else {
-                            resolve({ rowCount: this.changes, rows: [] });
-                        }
+                    if (err) return reject(err);
+                    
+                    if (isInsert && hasReturning) {
+                        const table = sql.match(/INSERT INTO (\w+)/i)?.[1];
+                        sqliteDb.get(`SELECT * FROM ${table} WHERE rowid = ?`, [this.lastID], (err, row) => {
+                            if (err) reject(err);
+                            else resolve({ rows: [row], rowCount: 1 });
+                        });
+                    } else {
+                        resolve({ rowCount: this.changes, rows: [] });
                     }
                 });
             }

@@ -20,7 +20,9 @@ app.use('/api/games', require('./routes/games')); // Protected by isAdmin middle
 
 // Serve Static Files (Frontend & Uploads)
 app.use(express.static(path.join(__dirname, '../public')));
-app.use('/uploads', express.static(path.join(__dirname, '../uploads')));
+const isVercel = process.env.VERCEL === '1';
+const uploadPath = isVercel ? '/tmp' : path.join(__dirname, '../uploads');
+app.use('/uploads', express.static(uploadPath));
 
 // Catch-all route for SPA
 app.get('*', (req, res) => {

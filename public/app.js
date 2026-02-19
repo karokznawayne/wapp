@@ -32,6 +32,22 @@ document.body.appendChild(toastContainer);
 const EMOJI_LIST = ['😀','😂','😍','🥰','😎','🤣','😊','🙏','👍','👎','❤️','🔥','🎉','💯','👏','😢','😡','🤔','😱','🥳','✨','💪','🙌','🤝','👀','💀','😈','🫡','🤗','😴'];
 const REACTION_EMOJIS = ['👍','❤️','😂','😮','😢','🔥'];
 
+// Utilities
+const escapeHtml = (str) => {
+    if (!str) return '';
+    return str.replace(/[&<>"']/g, m => ({
+        '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+    })[m]);
+};
+const escapeAttr = (str) => {
+    if (!str) return '';
+    return str.replace(/'/g, "&#39;").replace(/"/g, "&quot;");
+};
+const truncate = (str, len) => {
+    if (!str) return '';
+    return str.length > len ? str.substring(0, len) + '...' : str;
+};
+
 // Apply theme
 applyTheme(currentTheme);
 

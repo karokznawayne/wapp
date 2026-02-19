@@ -38,14 +38,13 @@ const upload = multer({
 
 // Send Message (with reply support)
 router.post('/', authenticateToken, async (req, res) => {
-    const { receiverId, groupId, content, replyToId } = req.body;
-
-    if (!content) return res.status(400).json({ error: 'Content required' });
+    const { receiverId, groupId, content, replyToId, attachment_url, attachment_type } = req.body;
+    if (!content && !attachment_url) return res.status(400).json({ error: 'Content or attachment required' });
 
     try {
         const result = await db.query(
-            'INSERT INTO messages (sender_id, receiver_id, group_id, content, read_status, reply_to_id, attachment_url, attachment_type) VALUES ($1, $2, $3, $4, FALSE, $5, $6, $7) RETURNING id, timestamp, read_status',
-            [req.user.id, receiverId || null, groupId || null, content, replyToId || null, req.body.attachment_url || null, req.body.attachment_type || null]
+            'INSERT INTO messages (sender_id, receiver_id, group_id, content, read_status, reply_to_id, attachment_url, attachment_type) VALUES ($1, $2, $3, $4, FALSE, $5, $6, $7) RETURNING id',
+            [req.user.id, receiverId || null, groupId || null, content || '', replyToId || null, attachment_url || null, attachment_type || null]
         );
         const row = result.rows[0];
 

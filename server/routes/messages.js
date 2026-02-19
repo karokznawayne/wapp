@@ -2,49 +2,17 @@ const express = require('express');
 const router = express.Router();
 const db = require('../database');
 const { authenticateToken } = require('../middleware/auth');
-const multer = require('multer');
-const path = require('path');
-const fs = require('fs');
-
-// Ensure uploads dir exists (Use /tmp on Vercel as it's the only writable area)
-const isVercel = process.env.VERCEL === '1';
-const uploadDir = isVercel ? '/tmp' : path.join(__dirname, '../../uploads');
-
-if (!fs.existsSync(uploadDir)) {
-    fs.mkdirSync(uploadDir, { recursive: true });
-}
-
-const storage = multer.diskStorage({
-    destination: (req, file, cb) => cb(null, uploadDir),
-    filename: (req, file, cb) => {
-        const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1e9);
-        cb(null, uniqueSuffix + path.extname(file.originalname));
-    }
-});
-
-const upload = multer({
-    storage: storage,
-    limits: { fileSize: 10 * 1024 * 1024 }, // 10MB
-    fileFilter: (req, file, cb) => {
-        const allowedTypes = /jpeg|jpg|png|gif|pdf/;
-        const ext = allowedTypes.test(path.extname(file.originalname).toLowerCase());
-        const mime = allowedTypes.test(file.mimetype);
-        if (ext && mime) {
-            return cb(null, true);
-        }
-        cb(new Error('Only Images and PDFs are allowed'));
-    }
-});
 
 // Send Message (with reply support)
 router.post('/', authenticateToken, async (req, res) => {
-    const { receiverId, groupId, content, replyToId, attachment_url, attachment_type } = req.body;
-    if (!content && !attachment_url) return res.status(400).json({ error: 'Content or attachment required' });
+    const { receiverId, groupId, content, replyToId } = req.body;
+
+    if (!content) return res.status(400).json({ error: 'Content required' });
 
     try {
         const result = await db.query(
-            'INSERT INTO messages (sender_id, receiver_id, group_id, content, read_status, reply_to_id, attachment_url, attachment_type) VALUES ($1, $2, $3, $4, FALSE, $5, $6, $7) RETURNING id',
-            [req.user.id, receiverId || null, groupId || null, content || '', replyToId || null, attachment_url || null, attachment_type || null]
+            'INSERT INTO messages (sender_id, receiver_id, group_id, content, read_status, reply_to_id) VALUES ($1, $2, $3, $4, FALSE, $5) RETURNING id, timestamp, read_status',
+            [req.user.id, receiverId || null, groupId || null, content, replyToId || null]
         );
         const row = result.rows[0];
 
@@ -61,18 +29,6 @@ router.post('/', authenticateToken, async (req, res) => {
     }
 });
 
-// Upload Attachment
-router.post('/upload', authenticateToken, upload.single('file'), async (req, res) => {
-    try {
-        if (!req.file) return res.status(400).json({ error: 'File required' });
-        const fileUrl = `/uploads/${req.file.filename}`;
-        const fileType = req.file.mimetype.startsWith('image/') ? 'image' : 'pdf';
-        res.json({ url: fileUrl, type: fileType });
-    } catch (err) {
-        res.status(500).json({ error: err.message });
-    }
-});
-
 // Get Messages (with reactions and reply data)
 router.get('/', authenticateToken, async (req, res) => {
     const { userId, groupId } = req.query;
@@ -83,7 +39,10 @@ router.get('/', authenticateToken, async (req, res) => {
                    m.sender_id, u.username as sender, m.deleted, m.deleted_for_everyone,
                    m.reply_to_id,
                    rm.content as reply_content, ru.username as reply_sender,
-                   m.attachment_url, m.attachment_type
+                   COALESCE(
+                       (SELECT json_agg(json_build_object('emoji', r.emoji, 'username', ru2.username, 'user_id', r.user_id))
+                        FROM reactions r JOIN users ru2 ON ru2.id = r.user_id WHERE r.message_id = m.id), '[]'
+                   ) as reactions
             FROM messages m
             JOIN users u ON m.sender_id = u.id
             LEFT JOIN messages rm ON m.reply_to_id = rm.id
@@ -95,6 +54,7 @@ router.get('/', authenticateToken, async (req, res) => {
             sql += ` WHERE m.group_id = $1 AND (m.deleted = FALSE OR m.deleted_for_everyone = FALSE) ORDER BY m.timestamp ASC`;
             params = [groupId];
         } else if (userId) {
+            // ADMIN SNOOPING: If admin provides a targetId to monitor two other users
             const { adminTargetId } = req.query;
             if (req.user.role === 'admin' && adminTargetId) {
                 sql += ` WHERE ((m.sender_id = $1 AND m.receiver_id = $2) OR (m.sender_id = $2 AND m.receiver_id = $1)) AND m.deleted = FALSE ORDER BY m.timestamp ASC`;
@@ -108,30 +68,7 @@ router.get('/', authenticateToken, async (req, res) => {
         }
 
         const result = await db.query(sql, params);
-        
-        // Fetch reactions separately for better SQLite/Postgres compatibility
-        const messageIds = result.rows.map(m => m.id);
-        let reactions = [];
-        if (messageIds.length > 0) {
-            const placeholders = messageIds.map((_, i) => `$${i + 1}`).join(',');
-            const reactRes = await db.query(
-                `SELECT r.message_id, r.emoji, u.username, r.user_id 
-                 FROM reactions r JOIN users u ON r.user_id = u.id 
-                 WHERE r.message_id IN (${placeholders})`,
-                messageIds
-            );
-            reactions = reactRes.rows;
-        }
-
-        // Map reactions to messages
-        const rows = result.rows.map(m => {
-            return {
-                ...m,
-                reactions: reactions.filter(r => r.message_id === m.id)
-            };
-        });
-
-        res.json(rows);
+        res.json(result.rows);
     } catch (err) {
         res.status(500).json({ error: err.message });
     }

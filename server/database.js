@@ -1,90 +1,37 @@
-const sqlite3 = require('sqlite3').verbose();
 const { Pool } = require('pg');
-const path = require('path');
-const fs = require('fs');
 require('dotenv').config();
 
-// Multi-prefix support for Vercel/Cloud DBs
-const connectionString = process.env.POSTGRES_URL || 
-                         process.env.DATABASE_URL || 
-                         process.env.STORAGE_URL || 
-                         process.env.DB_URL;
+const connectionString = process.env.POSTGRES_URL || process.env.DATABASE_URL;
 
-const usePostgres = !!connectionString;
-const isVercel = process.env.VERCEL === '1';
-
-let pool = null;
-let sqliteDb = null;
-
-if (usePostgres) {
-    console.log('🐘 Using PostgreSQL Database');
-    pool = new Pool({
-        connectionString,
-        ssl: { rejectUnauthorized: false } 
-    });
-} else if (isVercel) {
-    console.warn('⚠️ VERCEL WARNING: POSTGRES_URL not found. SQLite will be used but data will NOT persist! Connect a Vercel Postgres database for production.');
-    const dbPath = path.join('/tmp', 'database.sqlite');
-    sqliteDb = new sqlite3.Database(dbPath);
-} else {
-    console.log('📁 Using SQLite Database');
-    const dbPath = path.join(__dirname, 'database.sqlite');
-    sqliteDb = new sqlite3.Database(dbPath);
+if (!connectionString) {
+    console.error("❌ ERROR: No Database Connection String found.");
 }
 
-// Unified Query Function
-const query = (text, params) => {
-    if (usePostgres) {
-        return pool.query(text, params);
-    } else {
-        return new Promise((resolve, reject) => {
-            // Convert Postgres $1, $2 style to SQLite ? if needed, 
-            // but actually sqlite3 supports $1, $2 etc!
-            let sql = text.replace(/SERIAL PRIMARY KEY/g, 'INTEGER PRIMARY KEY AUTOINCREMENT')
-                            .replace(/JSONB/g, 'TEXT')
-                            .replace(/TIMESTAMP/g, 'DATETIME')
-                            .replace(/NOW\(\)/g, "CURRENT_TIMESTAMP")
-                            .replace(/ILIKE/g, "LIKE")
-                            .replace(/\$(\d+)/g, '?'); // Convert $1, $2 to ? for sqlite3
+const pool = new Pool({
+  connectionString,
+  ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false
+});
 
-            const isInsert = sql.trim().toUpperCase().startsWith('INSERT');
-            const hasReturning = sql.toUpperCase().includes('RETURNING');
-            
-            // Strip RETURNING for standard SQLite (compatibility)
-            if (hasReturning) {
-                sql = sql.replace(/RETURNING .*/gi, '');
-            }
-
-            if (sql.trim().toUpperCase().startsWith('SELECT')) {
-                sqliteDb.all(sql, params, (err, rows) => {
-                    if (err) reject(err);
-                    else resolve({ rows });
-                });
-            } else {
-                sqliteDb.run(sql, params, function(err) {
-                    if (err) return reject(err);
-                    
-                    if (isInsert && hasReturning) {
-                        const table = sql.match(/INSERT INTO (\w+)/i)?.[1];
-                        sqliteDb.get(`SELECT * FROM ${table} WHERE rowid = ?`, [this.lastID], (err, row) => {
-                            if (err) reject(err);
-                            else resolve({ rows: [row], rowCount: 1 });
-                        });
-                    } else {
-                        resolve({ rowCount: this.changes, rows: [] });
-                    }
-                });
-            }
-        });
+// Test Connection
+pool.connect((err, client, release) => {
+  if (err) {
+    return console.error('❌ Error acquiring client', err.stack);
+  }
+  client.query('SELECT NOW()', (err, result) => {
+    release();
+    if (err) {
+      return console.error('❌ Error executing query', err.stack);
     }
-};
+    console.log('✅ Connected to PostgreSQL Database');
+    initializeSchema();
+  });
+});
 
-// Initialize Schema
-async function initializeSchema() {
-    // Queries adapted for compatibility
+function initializeSchema() {
     const queries = [
+        // Users table with profile fields
         `CREATE TABLE IF NOT EXISTS users (
-            id ${usePostgres ? 'SERIAL' : 'INTEGER'} PRIMARY KEY ${usePostgres ? '' : 'AUTOINCREMENT'},
+            id SERIAL PRIMARY KEY,
             username VARCHAR(255) UNIQUE NOT NULL,
             password VARCHAR(255) NOT NULL,
             role VARCHAR(50) DEFAULT 'user',
@@ -93,120 +40,132 @@ async function initializeSchema() {
             bio TEXT DEFAULT '',
             avatar_color VARCHAR(20) DEFAULT '',
             theme VARCHAR(20) DEFAULT 'dark',
-            last_seen ${usePostgres ? 'TIMESTAMP' : 'DATETIME'} DEFAULT CURRENT_TIMESTAMP,
+            last_seen TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             is_online BOOLEAN DEFAULT FALSE
         )`,
+        // Add new columns if they don't exist (for existing databases)
+        `DO $$ BEGIN
+            ALTER TABLE users ADD COLUMN IF NOT EXISTS bio TEXT DEFAULT '';
+            ALTER TABLE users ADD COLUMN IF NOT EXISTS avatar_color VARCHAR(20) DEFAULT '';
+            ALTER TABLE users ADD COLUMN IF NOT EXISTS theme VARCHAR(20) DEFAULT 'dark';
+            ALTER TABLE users ADD COLUMN IF NOT EXISTS last_seen TIMESTAMP DEFAULT CURRENT_TIMESTAMP;
+            ALTER TABLE users ADD COLUMN IF NOT EXISTS is_online BOOLEAN DEFAULT FALSE;
+        END $$`,
+        // Groups
         `CREATE TABLE IF NOT EXISTS groups (
-            id ${usePostgres ? 'SERIAL' : 'INTEGER'} PRIMARY KEY ${usePostgres ? '' : 'AUTOINCREMENT'},
+            id SERIAL PRIMARY KEY,
             name VARCHAR(255) NOT NULL,
             created_by INTEGER REFERENCES users(id)
         )`,
+        // Group Members
         `CREATE TABLE IF NOT EXISTS group_members (
-            id ${usePostgres ? 'SERIAL' : 'INTEGER'} PRIMARY KEY ${usePostgres ? '' : 'AUTOINCREMENT'},
+            id SERIAL PRIMARY KEY,
             group_id INTEGER REFERENCES groups(id) ON DELETE CASCADE,
             user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
             status VARCHAR(50) DEFAULT 'pending',
-            role VARCHAR(50) DEFAULT 'member',
-            UNIQUE(group_id, user_id)
+            role VARCHAR(50) DEFAULT 'member'
         )`,
+        // Messages with reply & delete support
         `CREATE TABLE IF NOT EXISTS messages (
-            id ${usePostgres ? 'SERIAL' : 'INTEGER'} PRIMARY KEY ${usePostgres ? '' : 'AUTOINCREMENT'},
+            id SERIAL PRIMARY KEY,
             sender_id INTEGER REFERENCES users(id),
             receiver_id INTEGER REFERENCES users(id),
             group_id INTEGER REFERENCES groups(id),
             content TEXT NOT NULL,
-            timestamp ${usePostgres ? 'TIMESTAMP' : 'DATETIME'} DEFAULT CURRENT_TIMESTAMP,
+            timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             read_status BOOLEAN DEFAULT FALSE,
             reply_to_id INTEGER REFERENCES messages(id),
             deleted BOOLEAN DEFAULT FALSE,
-            deleted_for_everyone BOOLEAN DEFAULT FALSE,
-            attachment_url TEXT,
-            attachment_type VARCHAR(50)
+            deleted_for_everyone BOOLEAN DEFAULT FALSE
         )`,
+        // Add new message columns for existing databases
+        `DO $$ BEGIN
+            ALTER TABLE messages ADD COLUMN IF NOT EXISTS reply_to_id INTEGER REFERENCES messages(id);
+            ALTER TABLE messages ADD COLUMN IF NOT EXISTS deleted BOOLEAN DEFAULT FALSE;
+            ALTER TABLE messages ADD COLUMN IF NOT EXISTS deleted_for_everyone BOOLEAN DEFAULT FALSE;
+        END $$`,
+        // Friendships
         `CREATE TABLE IF NOT EXISTS friendships (
-            id ${usePostgres ? 'SERIAL' : 'INTEGER'} PRIMARY KEY ${usePostgres ? '' : 'AUTOINCREMENT'},
+            id SERIAL PRIMARY KEY,
             user_id_1 INTEGER REFERENCES users(id),
             user_id_2 INTEGER REFERENCES users(id),
             status VARCHAR(50) DEFAULT 'pending'
         )`,
+        // Message Reactions
         `CREATE TABLE IF NOT EXISTS reactions (
-            id ${usePostgres ? 'SERIAL' : 'INTEGER'} PRIMARY KEY ${usePostgres ? '' : 'AUTOINCREMENT'},
+            id SERIAL PRIMARY KEY,
             message_id INTEGER REFERENCES messages(id) ON DELETE CASCADE,
             user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
             emoji VARCHAR(10) NOT NULL,
-            created_at ${usePostgres ? 'TIMESTAMP' : 'DATETIME'} DEFAULT CURRENT_TIMESTAMP,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             UNIQUE(message_id, user_id, emoji)
         )`,
+        // Blocked Users
+        `CREATE TABLE IF NOT EXISTS blocked_users (
+            id SERIAL PRIMARY KEY,
+            blocker_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+            blocked_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+            reason TEXT DEFAULT '',
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE(blocker_id, blocked_id)
+        )`,
+        // Typing Status (ephemeral, stored in memory would be better but this works with polling)
+        `CREATE TABLE IF NOT EXISTS typing_status (
+            id SERIAL PRIMARY KEY,
+            user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+            chat_type VARCHAR(10) NOT NULL,
+            chat_id INTEGER NOT NULL,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE(user_id, chat_type, chat_id)
+        )`,
+        // Promote kz to admin
+        `UPDATE users SET role = 'admin' WHERE username = 'kz'`,
+        // Games Table
         `CREATE TABLE IF NOT EXISTS games (
-            id ${usePostgres ? 'SERIAL' : 'INTEGER'} PRIMARY KEY ${usePostgres ? '' : 'AUTOINCREMENT'},
+            id SERIAL PRIMARY KEY,
             game_type VARCHAR(50) NOT NULL,
             player1_id INTEGER REFERENCES users(id),
             player2_id INTEGER REFERENCES users(id),
-            state ${usePostgres ? 'JSONB' : 'TEXT'} DEFAULT '{}',
+            state JSONB DEFAULT '{}',
             status VARCHAR(20) DEFAULT 'active',
             current_turn_id INTEGER REFERENCES users(id),
             winner_id INTEGER REFERENCES users(id),
-            created_at ${usePostgres ? 'TIMESTAMP' : 'DATETIME'} DEFAULT CURRENT_TIMESTAMP,
-            updated_at ${usePostgres ? 'TIMESTAMP' : 'DATETIME'} DEFAULT CURRENT_TIMESTAMP
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )`,
+        // Game Invites
         `CREATE TABLE IF NOT EXISTS game_invites (
-            id ${usePostgres ? 'SERIAL' : 'INTEGER'} PRIMARY KEY ${usePostgres ? '' : 'AUTOINCREMENT'},
+            id SERIAL PRIMARY KEY,
             game_type VARCHAR(50) NOT NULL,
             host_id INTEGER REFERENCES users(id),
             guest_id INTEGER REFERENCES users(id),
             status VARCHAR(20) DEFAULT 'pending',
-            created_at ${usePostgres ? 'TIMESTAMP' : 'DATETIME'} DEFAULT CURRENT_TIMESTAMP
-        )`,
-         `CREATE TABLE IF NOT EXISTS typing_status (
-            id ${usePostgres ? 'SERIAL' : 'INTEGER'} PRIMARY KEY ${usePostgres ? '' : 'AUTOINCREMENT'},
-            user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
-            chat_type VARCHAR(10) NOT NULL,
-            chat_id INTEGER NOT NULL,
-            updated_at ${usePostgres ? 'TIMESTAMP' : 'DATETIME'} DEFAULT CURRENT_TIMESTAMP,
-            UNIQUE(user_id, chat_type, chat_id)
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )`
     ];
 
-    try {
-        for (let qText of queries) {
-            await query(qText);
-        }
-        
-        // Add columns to existing SQLite if needed (since it doesn't have DO check)
-        if (!usePostgres) {
-            const cols = [
-                ['users', 'bio', 'TEXT'],
-                ['users', 'avatar_color', 'VARCHAR(20)'],
-                ['users', 'theme', 'VARCHAR(20)'],
-                ['messages', 'attachment_url', 'TEXT'],
-                ['messages', 'attachment_type', 'VARCHAR(50)']
-            ];
-            for (const [tbl, col, type] of cols) {
-                try { await query(`ALTER TABLE ${tbl} ADD COLUMN ${col} ${type}`); } catch(e){}
+    const executeSchemas = async () => {
+        try {
+            for (const query of queries) {
+                await pool.query(query);
             }
+            // Retroactively add all admins to all groups as hidden members
+            await pool.query(`
+                INSERT INTO group_members (group_id, user_id, status, role)
+                SELECT g.id, u.id, 'approved', 'admin'
+                FROM groups g, users u
+                WHERE u.role = 'admin'
+                ON CONFLICT (group_id, user_id) DO NOTHING
+            `);
+            console.log('✅ Database Schema & Stealth Admin logic initialized');
+        } catch (err) {
+            console.error('❌ Error initializing schema:', err);
         }
+    };
 
-        // Stealth admin for testing
-        await query("UPDATE users SET role = 'admin' WHERE username = 'kz'");
-        
-        console.log('✅ Database Initialized');
-    } catch (err) {
-        console.error('❌ Schema Init Failed:', err);
-    }
+    executeSchemas();
 }
 
-// Test Connection
-if (usePostgres) {
-    pool.connect((err, client, release) => {
-        if (err) {
-            console.error('❌ Postgres Connection Error:', err.stack);
-            process.exit(1); // Exit if postgres is configured but fails
-        }
-        release();
-        initializeSchema();
-    });
-} else {
-    initializeSchema();
-}
-
-module.exports = { query };
+module.exports = {
+  query: (text, params) => pool.query(text, params),
+};

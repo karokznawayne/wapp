@@ -636,31 +636,11 @@ async function loadMessages(isPoll = false) {
                 // Deleted message
                 const content = m.deleted_for_everyone ? `<em style="opacity:0.6">🚫 This message was deleted</em>` : escapeHtml(m.content);
 
-                // Attachment
-                let attachmentHtml = '';
-                if (m.attachment_url) {
-                    if (m.attachment_type === 'image') {
-                        attachmentHtml = `
-                            <div class="attachment-bubble">
-                                <img src="${m.attachment_url}" class="attachment-image" onclick="window.open('${m.attachment_url}', '_blank')">
-                            </div>`;
-                    } else if (m.attachment_type === 'pdf') {
-                        attachmentHtml = `
-                            <div class="attachment-bubble">
-                                <a href="${m.attachment_url}" target="_blank" class="pdf-link">
-                                    <span class="material-symbols-rounded">picture_as_pdf</span>
-                                    <span>Document.pdf</span>
-                                </a>
-                            </div>`;
-                    }
-                }
-
                 html += `<div class="message ${isMe ? 'sent' : 'received'}" id="msg-${m.id}" 
                               oncontextmenu="showMessageMenu(event, ${m.id}, ${isMe}, '${escapeAttr(m.content)}', '${m.sender}')">
                     ${!isMe && activeChat.type === 'group' ? `<div class="message-sender">${m.sender}</div>` : ''}
                     ${replyHtml}
-                    ${attachmentHtml}
-                    ${m.content ? `<div>${content}</div>` : ''}
+                    <div>${content}</div>
                     <div class="message-info">
                         <span>${time}</span>
                         ${ticks}
@@ -700,34 +680,12 @@ document.getElementById('chat-input-form').addEventListener('submit', async (e) 
     e.preventDefault();
     const input = document.getElementById('message-input');
     const content = input.value.trim();
-    if (!content && !document.getElementById('attachment-input').files[0] && !activeChat) return;
+    if (!content || !activeChat) return;
 
     const body = { content };
     if (activeChat.type === 'group') body.groupId = activeChat.id;
     else body.receiverId = activeChat.id;
     if (replyingTo) body.replyToId = replyingTo.id;
-
-    // Handle File Attachment if present
-    const fileInput = document.getElementById('attachment-input');
-    if (fileInput.files[0]) {
-        const formData = new FormData();
-        formData.append('file', fileInput.files[0]);
-        
-        try {
-            const uploadRes = await fetch(`${API_URL}/messages/upload`, {
-                method: 'POST',
-                headers: { 'Authorization': `Bearer ${token}` },
-                body: formData
-            });
-            const uploadData = await uploadRes.json();
-            body.attachment_url = uploadData.url;
-            body.attachment_type = uploadData.type;
-            if (!content) body.content = ''; // Allow empty content with image
-        } catch (e) {
-            showToast('Error', 'File upload failed');
-            return;
-        }
-    }
 
     await fetch(`${API_URL}/messages`, {
         method: 'POST',
@@ -735,23 +693,10 @@ document.getElementById('chat-input-form').addEventListener('submit', async (e) 
         body: JSON.stringify(body)
     });
     input.value = '';
-    fileInput.value = '';
-    document.getElementById('attach-btn').style.color = 'inherit';
     replyingTo = null;
     hideReplyBar();
     loadMessages();
 });
-
-// Attachments
-document.getElementById('attach-btn').onclick = () => document.getElementById('attachment-input').click();
-document.getElementById('attachment-input').onchange = (e) => {
-    if (e.target.files[0]) {
-        document.getElementById('attach-btn').style.color = 'var(--accent)';
-        showToast('System', `File "${e.target.files[0].name}" attached`);
-    } else {
-        document.getElementById('attach-btn').style.color = 'inherit';
-    }
-};
 
 // Typing indicator on input
 let typingTimeout;
@@ -1017,7 +962,7 @@ async function showGroupInfo(groupId, groupName) {
             <div class="chat-item-container">
                 <div class="avatar" style="width:34px; height:34px; font-size:0.8rem; background:${getAvatarColor(m.username)}">${m.username[0].toUpperCase()}</div>
                 <div class="chat-info">
-                    <div class="chat-name">${m.username} ${m.group_role === 'admin' ? '👑' : ''}</div>
+                    <div class="chat-name">${m.username} ${m.role === 'admin' ? '👑' : ''}</div>
                     <div style="font-size:0.72rem; color:var(--text-muted);">${m.status}</div>
                 </div>
             </div>
@@ -1027,7 +972,7 @@ async function showGroupInfo(groupId, groupName) {
     const myMembership = members.find(m => m.username === currentUser.username);
     const actionsDiv = document.getElementById('group-actions');
 
-    if (myMembership && myMembership.group_role === 'admin') {
+    if (myMembership && myMembership.role === 'admin') {
         actionsDiv.style.display = 'block';
         populateFriendDropdown(groupId, members);
     } else {
@@ -1321,33 +1266,19 @@ function setAvatar(elementId, username, color = null) {
     el.innerText = username[0].toUpperCase();
 }
 
-function formatDateLabel(timestamp) {
-    const date = new Date(timestamp);
-    const today = new Date();
-    const diffTime = Math.abs(today - date);
-    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-    
-    if (date.toDateString() === today.toDateString()) return 'Today';
-    if (diffDays === 1) return 'Yesterday';
-    if (diffDays < 7) return date.toLocaleDateString([], { weekday: 'long' });
-    return date.toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric' });
-}
-
-function truncate(str, len) {
-    if (!str) return '';
-    return str.length > len ? str.substring(0, len) + '...' : str;
-}
-
 function escapeHtml(str) {
-    if (!str) return '';
     const div = document.createElement('div');
     div.textContent = str;
     return div.innerHTML;
 }
 
 function escapeAttr(str) {
+    return String(str).replace(/'/g, "\\'").replace(/"/g, '\\"').replace(/\n/g, ' ');
+}
+
+function truncate(str, len) {
     if (!str) return '';
-    return String(str).replace(/'/g, "&#39;").replace(/"/g, "&quot;");
+    return str.length > len ? str.substring(0, len) + '...' : str;
 }
 
 // ============ PROFILE SETTINGS ============
@@ -1600,8 +1531,8 @@ async function checkGameInvites() {
             <li class="glass" style="margin-bottom:8px; padding:8px; border-radius:8px; display:flex; flex-direction:column; gap:5px;">
                 <div style="font-size:0.8rem; font-weight:600;">${inv.host_name} wants to play ${inv.game_type}</div>
                 <div style="display:flex; gap:5px;">
-                    <button class="btn-xs" style="flex:1" onclick="respondToGameInvite(${inv.id}, 'accepted')">Accept</button>
-                    <button class="btn-xs btn-danger" style="flex:1" onclick="respondToGameInvite(${inv.id}, 'rejected')">Decline</button>
+                    <button class="btn-xs" style="flex:1" onclick="respondToInvite(${inv.id}, 'accepted')">Accept</button>
+                    <button class="btn-xs btn-danger" style="flex:1" onclick="respondToInvite(${inv.id}, 'rejected')">Decline</button>
                 </div>
             </li>
         `).join('');
@@ -1628,7 +1559,7 @@ async function checkActiveGames() {
     } catch (e) {}
 }
 
-window.respondToGameInvite = async (inviteId, action) => {
+window.respondToInvite = async (inviteId, action) => {
     const res = await fetch(`${API_URL}/games/invite/${inviteId}/respond`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
@@ -1638,7 +1569,7 @@ window.respondToGameInvite = async (inviteId, action) => {
         const data = await res.json();
         startLocalGame(data.gameId);
     }
-    checkGameInvites(); // Refresh list
+    checkGameInvites();
 }
 
 window.startLocalGame = (gameId) => {
@@ -1651,6 +1582,7 @@ window.startLocalGame = (gameId) => {
 
 document.getElementById('close-play-modal').onclick = () => {
     gamePlayModal.style.display = 'none';
+    currentGameId = null;
     if (gamePollingInterval) clearInterval(gamePollingInterval);
 };
 

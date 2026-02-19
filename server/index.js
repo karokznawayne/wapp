@@ -18,11 +18,8 @@ app.use('/api/messages', require('./routes/messages'));
 app.use('/api/admin', require('./routes/admin'));
 app.use('/api/games', require('./routes/games')); // Protected by isAdmin middleware inside
 
-// Serve Static Files (Frontend & Uploads)
+// Serve Static Files (Frontend)
 app.use(express.static(path.join(__dirname, '../public')));
-const isVercel = process.env.VERCEL === '1';
-const uploadPath = isVercel ? '/tmp' : path.join(__dirname, '../uploads');
-app.use('/uploads', express.static(uploadPath));
 
 // Catch-all route for SPA
 app.get('*', (req, res) => {

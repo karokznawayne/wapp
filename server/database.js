@@ -6,6 +6,7 @@ require('dotenv').config();
 
 const connectionString = process.env.POSTGRES_URL || process.env.DATABASE_URL;
 const usePostgres = !!connectionString;
+const isVercel = process.env.VERCEL === '1';
 
 let pool = null;
 let sqliteDb = null;
@@ -14,8 +15,12 @@ if (usePostgres) {
     console.log('🐘 Using PostgreSQL Database');
     pool = new Pool({
         connectionString,
-        ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false
+        ssl: { rejectUnauthorized: false } 
     });
+} else if (isVercel) {
+    console.warn('⚠️ VERCEL WARNING: POSTGRES_URL not found. SQLite will be used but data will NOT persist! Connect a Vercel Postgres database for production.');
+    const dbPath = path.join('/tmp', 'database.sqlite');
+    sqliteDb = new sqlite3.Database(dbPath);
 } else {
     console.log('📁 Using SQLite Database');
     const dbPath = path.join(__dirname, 'database.sqlite');

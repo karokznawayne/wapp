@@ -21,6 +21,22 @@ router.get('/recent-players', authenticateToken, async (req, res) => {
     }
 });
 
+// Get My Active Games
+router.get('/my-active', authenticateToken, async (req, res) => {
+    try {
+        const sql = `
+            SELECT id, game_type, status 
+            FROM games 
+            WHERE (player1_id = $1 OR player2_id = $1) AND status = 'active'
+            ORDER BY updated_at DESC
+        `;
+        const result = await db.query(sql, [req.user.id]);
+        res.json(result.rows);
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
 // Send Game Invite
 router.post('/invite', authenticateToken, async (req, res) => {
     const { guestId, gameType } = req.body;

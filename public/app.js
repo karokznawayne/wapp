@@ -222,6 +222,7 @@ function showDashboard() {
         sendHeartbeat();
         loadChats();
         checkGameInvites();
+        checkActiveGames();
         if (activeChat) {
             loadMessages(true);
             checkTypingStatus();
@@ -1510,24 +1511,51 @@ window.invitePlayer = async (guestId) => {
     } catch (e) { showToast('Error', 'Failed to send invite'); }
 };
 
-// Polling for Invites
+// Polling for Invites & Active Games
 const seenInvites = new Set();
 async function checkGameInvites() {
     if (!token) return;
     try {
         const res = await fetch(`${API_URL}/games/invites`, { headers: { 'Authorization': `Bearer ${token}` } });
         const invites = await res.json();
-        
+        const container = document.getElementById('sidebar-game-invites');
+        const list = document.getElementById('game-invite-list');
+
+        if (invites.length === 0) {
+            container.style.display = 'none';
+            return;
+        }
+
+        container.style.display = 'block';
+        list.innerHTML = invites.map(inv => `
+            <li class="glass" style="margin-bottom:8px; padding:8px; border-radius:8px; display:flex; flex-direction:column; gap:5px;">
+                <div style="font-size:0.8rem; font-weight:600;">${inv.host_name} wants to play ${inv.game_type}</div>
+                <div style="display:flex; gap:5px;">
+                    <button class="btn-xs" style="flex:1" onclick="respondToInvite(${inv.id}, 'accepted')">Accept</button>
+                    <button class="btn-xs btn-danger" style="flex:1" onclick="respondToInvite(${inv.id}, 'rejected')">Decline</button>
+                </div>
+            </li>
+        `).join('');
+
+        // Still sound notification only for NEW ones
         invites.forEach(inv => {
-            if (seenInvites.has(inv.id)) return;
-            seenInvites.add(inv.id);
-            
-            if (confirm(`${inv.host_name} invited you to play ${inv.game_type.toUpperCase()}!`)) {
-                respondToInvite(inv.id, 'accepted');
-            } else {
-                respondToInvite(inv.id, 'rejected');
+            if (!seenInvites.has(inv.id)) {
+                seenInvites.add(inv.id);
+                playSound();
             }
         });
+    } catch (e) {}
+}
+
+// Host detection: join if an invited game is now active
+async function checkActiveGames() {
+    if (!token || currentGameId) return; // Don't interrupt if already in a game
+    try {
+        const res = await fetch(`${API_URL}/games/my-active`, { headers: { 'Authorization': `Bearer ${token}` } });
+        const active = await res.json();
+        if (active.length > 0) {
+            startLocalGame(active[0].id);
+        }
     } catch (e) {}
 }
 

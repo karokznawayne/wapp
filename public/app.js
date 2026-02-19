@@ -205,6 +205,9 @@ function showDashboard() {
         document.getElementById('admin-btn').style.display = 'flex';
     }
 
+    // Profile click
+    document.querySelector('.user-profile').onclick = openProfileSettings;
+
     // Request Notification Permission
     if ('Notification' in window && Notification.permission !== 'granted') {
         Notification.requestPermission();
@@ -251,7 +254,7 @@ document.getElementById('search-btn').addEventListener('click', async () => {
     else results.innerHTML = users.map(u => `
         <div class="search-item">
             <div style="display:flex; align-items:center; gap:10px;">
-                <div class="avatar" style="width:32px; height:32px; font-size:0.8rem; background:${getAvatarColor(u.username)}">${u.username[0].toUpperCase()}</div>
+                <div class="avatar" style="width:32px; height:32px; font-size:0.8rem; background:${u.avatar_color || getAvatarColor(u.username)}">${u.username[0].toUpperCase()}</div>
                 <span>${u.username}</span>
             </div>
             <button onclick="sendFriendRequest(${u.id})">Add</button>
@@ -330,7 +333,7 @@ async function loadChats() {
             const isActive = activeChat && activeChat.type === 'user' && activeChat.id === f.id;
             const onlineClass = f.is_online ? 'online-indicator' : '';
             return `<li onclick="openChat('user', ${f.id}, '${f.username}')" class="chat-item-container ${isActive ? 'active' : ''}">
-                <div class="avatar" style="background:${getAvatarColor(f.username)}">
+                <div class="avatar" style="background:${f.avatar_color || getAvatarColor(f.username)}">
                     ${f.username[0].toUpperCase()}
                     ${f.is_online ? '<span class="online-dot"></span>' : ''}
                 </div>
@@ -438,7 +441,21 @@ window.openChat = async (type, id, name) => {
 
     document.getElementById('chat-header').style.display = 'flex';
     document.getElementById('chat-title').textContent = name;
-    setAvatar('chat-avatar', name);
+    
+    // Find color if user
+    let color = null;
+    if (type === 'user') {
+        const friendElement = Array.from(document.querySelectorAll('#chat-list li.chat-item-container')).find(li => {
+            const avatar = li.querySelector('.avatar');
+            return avatar && avatar.style.background;
+        });
+        // We can just get it from the data if we had it in a better way, 
+        // but for now let's try to find the active item's color.
+        const activeItem = document.querySelector('#chat-list li.active .avatar');
+        if (activeItem) color = activeItem.style.background;
+    }
+
+    setAvatar('chat-avatar', name, color);
     document.getElementById('chat-input-form').style.display = 'flex';
 
     // For mobile
@@ -1091,10 +1108,10 @@ function getAvatarColor(username) {
     return colors[Math.abs(hash) % colors.length];
 }
 
-function setAvatar(elementId, username) {
+function setAvatar(elementId, username, color = null) {
     const el = document.getElementById(elementId);
     if (!username) { el.style.background = '#555'; el.innerText = '?'; return; }
-    el.style.background = getAvatarColor(username);
+    el.style.background = color || getAvatarColor(username);
     el.innerText = username[0].toUpperCase();
 }
 
@@ -1112,3 +1129,154 @@ function truncate(str, len) {
     if (!str) return '';
     return str.length > len ? str.substring(0, len) + '...' : str;
 }
+
+// ============ PROFILE SETTINGS ============
+document.querySelector('.user-profile').addEventListener('click', openProfileSettings);
+
+document.getElementById('close-profile-modal').onclick = () => {
+    document.getElementById('profile-modal-overlay').style.display = 'none';
+};
+
+async function openProfileSettings() {
+    const modal = document.getElementById('profile-modal-overlay');
+    modal.style.display = 'flex';
+    switchProfileTab('general');
+
+    // Fill data
+    document.getElementById('profile-username').textContent = currentUser.username;
+    document.getElementById('profile-bio').value = currentUser.bio || '';
+    document.getElementById('profile-avatar-color').value = currentUser.avatar_color || '';
+    
+    setAvatar('profile-avatar-preview', currentUser.username, currentUser.avatar_color);
+    updateMFALabel();
+}
+
+window.switchProfileTab = (tabId) => {
+    document.querySelectorAll('.profile-tab-content').forEach(el => el.style.display = 'none');
+    document.querySelectorAll('.tabs button').forEach(el => el.classList.remove('active'));
+    
+    document.getElementById(`profile-content-${tabId}`).style.display = 'block';
+    document.getElementById(`tab-${tabId}`).classList.add('active');
+};
+
+window.selectAvatarColor = (color) => {
+    document.getElementById('profile-avatar-color').value = color;
+    document.getElementById('profile-avatar-preview').style.background = color;
+};
+
+window.saveProfileGeneral = async () => {
+    const bio = document.getElementById('profile-bio').value;
+    const avatar_color = document.getElementById('profile-avatar-color').value;
+
+    try {
+        const res = await fetch(`${API_URL}/users/profile`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+            body: JSON.stringify({ bio, avatar_color })
+        });
+        if (res.ok) {
+            const updated = await res.json();
+            currentUser = { ...currentUser, ...updated };
+            showToast('Profile', 'Profile updated successfully');
+            setAvatar('my-avatar', currentUser.username, currentUser.avatar_color);
+        }
+    } catch (e) {
+        showToast('Error', 'Failed to save profile');
+    }
+};
+
+window.changePassword = async (e) => {
+    e.preventDefault();
+    const oldPassword = document.getElementById('old-password').value;
+    const newPassword = document.getElementById('new-password').value;
+
+    try {
+        const res = await fetch(`${API_URL}/auth/change-password`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+            body: JSON.stringify({ oldPassword, newPassword })
+        });
+        const data = await res.json();
+        if (res.ok) {
+            showToast('Security', 'Password updated successfully');
+            e.target.reset();
+        } else {
+            showToast('Error', data.error);
+        }
+    } catch (e) {
+        showToast('Error', 'Connection error');
+    }
+};
+
+async function updateMFALabel() {
+    const res = await fetch(`${API_URL}/users/me`, { headers: { 'Authorization': `Bearer ${token}` } });
+    const user = await res.json();
+    currentUser.mfa_enabled = user.mfa_enabled;
+
+    const badge = document.getElementById('mfa-status-badge');
+    const enableBtn = document.getElementById('btn-enable-mfa');
+    const disableBtn = document.getElementById('btn-disable-mfa');
+
+    if (user.mfa_enabled) {
+        badge.textContent = 'Enabled';
+        badge.className = 'role-badge admin';
+        enableBtn.style.display = 'none';
+        disableBtn.style.display = 'block';
+    } else {
+        badge.textContent = 'Disabled';
+        badge.className = 'role-badge user';
+        enableBtn.style.display = 'block';
+        disableBtn.style.display = 'none';
+    }
+}
+
+window.enableMFA = () => {
+    document.getElementById('profile-modal-overlay').style.display = 'none';
+    setupMFA();
+};
+
+window.promptDisableMFA = async () => {
+    const password = prompt('Please enter your password to disable MFA:');
+    if (!password) return;
+
+    try {
+        const res = await fetch(`${API_URL}/auth/mfa/disable`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+            body: JSON.stringify({ password })
+        });
+        if (res.ok) {
+            showToast('Security', 'MFA disabled');
+            updateMFALabel();
+        } else {
+            const data = await res.json();
+            showToast('Error', data.error);
+        }
+    } catch (e) {
+        showToast('Error', 'Connection error');
+    }
+};
+
+window.toggleSetting = (setting) => {
+    const val = document.getElementById(`setting-${setting === 'sound' ? 'sound' : 'browser-notif'}`).checked;
+    localStorage.setItem(`setting_${setting}`, val);
+    showToast('Settings', `${setting === 'sound' ? 'Sounds' : 'Browser notifications'} ${val ? 'enabled' : 'disabled'}`);
+};
+
+// Override toggleTheme to update checkbox
+const originalToggleTheme = window.toggleTheme;
+window.toggleTheme = async () => {
+    await originalToggleTheme();
+    const checkbox = document.getElementById('setting-dark-mode');
+    if (checkbox) checkbox.checked = (currentTheme === 'dark');
+};
+
+// Initial state for settings
+document.addEventListener('DOMContentLoaded', () => {
+    if (document.getElementById('setting-sound')) {
+        document.getElementById('setting-sound').checked = localStorage.getItem('setting_sound') !== 'false';
+    }
+    if (document.getElementById('setting-browser-notif')) {
+        document.getElementById('setting-browser-notif').checked = localStorage.getItem('setting_browserNotif') === 'true';
+    }
+});

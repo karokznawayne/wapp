@@ -45,7 +45,7 @@ router.get('/search', authenticateToken, async (req, res) => {
     if (!q) return res.json([]);
     try {
         const result = await db.query(`
-            SELECT id, username FROM users 
+            SELECT id, username, avatar_color FROM users 
             WHERE username ILIKE $1 AND id != $2 
             AND id NOT IN (SELECT blocked_id FROM blocked_users WHERE blocker_id = $2)
             AND id NOT IN (SELECT blocker_id FROM blocked_users WHERE blocked_id = $2)
@@ -90,7 +90,7 @@ router.get('/friends', authenticateToken, async (req, res) => {
     try {
         const sql = `
             SELECT 
-                u.id, u.username, u.is_online, u.last_seen,
+                u.id, u.username, u.avatar_color, u.is_online, u.last_seen,
                 f.status, f.user_id_1 as user1_id, f.user_id_2 as user2_id, f.id as friendship_id,
                 (SELECT content FROM messages m WHERE ((m.sender_id = u.id AND m.receiver_id = $1) OR (m.sender_id = $1 AND m.receiver_id = u.id)) AND m.deleted = FALSE ORDER BY m.timestamp DESC LIMIT 1) as last_message,
                 (SELECT timestamp FROM messages m WHERE ((m.sender_id = u.id AND m.receiver_id = $1) OR (m.sender_id = $1 AND m.receiver_id = u.id)) AND m.deleted = FALSE ORDER BY m.timestamp DESC LIMIT 1) as last_message_time,

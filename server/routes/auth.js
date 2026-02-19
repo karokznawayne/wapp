@@ -128,4 +128,41 @@ router.post('/mfa/verify', authenticateToken, async (req, res) => {
     }
 });
 
+// Change Password
+router.post('/change-password', authenticateToken, async (req, res) => {
+    const { oldPassword, newPassword } = req.body;
+    try {
+        const result = await db.query('SELECT password FROM users WHERE id = $1', [req.user.id]);
+        const user = result.rows[0];
+
+        if (!bcrypt.compareSync(oldPassword, user.password)) {
+            return res.status(401).json({ error: 'Incorrect old password' });
+        }
+
+        const hashedPassword = bcrypt.hashSync(newPassword, 8);
+        await db.query('UPDATE users SET password = $1 WHERE id = $2', [hashedPassword, req.user.id]);
+        res.json({ message: 'Password changed successfully' });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// Disable MFA
+router.post('/mfa/disable', authenticateToken, async (req, res) => {
+    const { password } = req.body;
+    try {
+        const result = await db.query('SELECT password FROM users WHERE id = $1', [req.user.id]);
+        const user = result.rows[0];
+
+        if (!bcrypt.compareSync(password, user.password)) {
+            return res.status(401).json({ error: 'Incorrect password' });
+        }
+
+        await db.query('UPDATE users SET mfa_enabled = FALSE WHERE id = $1', [req.user.id]);
+        res.json({ message: 'MFA Disabled' });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
 module.exports = router;

@@ -113,4 +113,25 @@ router.delete('/group/:id', authenticateToken, isAdmin, async (req, res) => {
     }
 });
 
+// List all active 1-on-1 conversation pairs
+router.get('/conversations', authenticateToken, isAdmin, async (req, res) => {
+    try {
+        const sql = `
+            SELECT DISTINCT ON (least(sender_id, receiver_id), greatest(sender_id, receiver_id))
+                u1.username as user1_name, u1.id as user1_id,
+                u2.username as user2_name, u2.id as user2_id,
+                m.timestamp as last_activity
+            FROM messages m
+            JOIN users u1 ON m.sender_id = u1.id
+            JOIN users u2 ON m.receiver_id = u2.id
+            WHERE m.group_id IS NULL
+            ORDER BY least(sender_id, receiver_id), greatest(sender_id, receiver_id), m.timestamp DESC
+        `;
+        const result = await db.query(sql);
+        res.json(result.rows);
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
 module.exports = router;

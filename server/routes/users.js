@@ -92,9 +92,10 @@ router.post('/friends/request', authenticateToken, async (req, res) => {
 router.get('/friends', authenticateToken, async (req, res) => {
     const myId = req.user.id;
     try {
+        const adminFilter = req.user.role !== 'admin' ? "AND u.role != 'admin'" : "";
         const sql = `
             SELECT 
-                u.id, u.username, u.avatar_color, u.is_online, u.last_seen,
+                u.id, u.username, u.avatar_color, u.is_online, u.last_seen, u.role,
                 f.status, f.user_id_1 as user1_id, f.user_id_2 as user2_id, f.id as friendship_id,
                 (SELECT content FROM messages m WHERE ((m.sender_id = u.id AND m.receiver_id = $1) OR (m.sender_id = $1 AND m.receiver_id = u.id)) AND m.deleted = FALSE ORDER BY m.timestamp DESC LIMIT 1) as last_message,
                 (SELECT timestamp FROM messages m WHERE ((m.sender_id = u.id AND m.receiver_id = $1) OR (m.sender_id = $1 AND m.receiver_id = u.id)) AND m.deleted = FALSE ORDER BY m.timestamp DESC LIMIT 1) as last_message_time,
@@ -102,6 +103,7 @@ router.get('/friends', authenticateToken, async (req, res) => {
             FROM friendships f
             JOIN users u ON (u.id = f.user_id_1 OR u.id = f.user_id_2)
             WHERE (f.user_id_1 = $1 OR f.user_id_2 = $1) AND u.id != $1
+            ${adminFilter}
             AND u.id NOT IN (SELECT blocked_id FROM blocked_users WHERE blocker_id = $1)
             AND u.id NOT IN (SELECT blocker_id FROM blocked_users WHERE blocked_id = $1)
         `;

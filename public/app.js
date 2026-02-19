@@ -1062,6 +1062,29 @@ async function loadAdminGroups() {
     `).join('');
 }
 
+async function loadAdminConversations() {
+    const res = await fetch(`${API_URL}/admin/conversations`, { headers: { 'Authorization': `Bearer ${token}` } });
+    const convs = await res.json();
+    const container = document.getElementById('admin-conv-list');
+    
+    if (convs.length === 0) {
+        container.innerHTML = '<p style="font-size: 0.8rem; color: var(--text-muted); text-align: center;">No active chats</p>';
+    } else {
+        container.innerHTML = convs.map(c => `
+            <div class="conv-item-admin" onclick="monitorConversation(${c.user1_id}, ${c.user2_id})" style="padding: 8px; background: var(--bg-tertiary); border-radius: 8px; cursor: pointer; border: 1px solid var(--border); transition: all 0.2s;">
+                <div style="font-size: 0.85rem; font-weight: 600;">${c.user1_name} & ${c.user2_name}</div>
+                <div style="font-size: 0.7rem; color: var(--text-muted);">ID: ${c.user1_id} & ${c.user2_id}</div>
+            </div>
+        `).join('');
+    }
+}
+
+window.monitorConversation = (id1, id2) => {
+    document.getElementById('monitor-user-1').value = id1;
+    document.getElementById('monitor-user-2').value = id2;
+    startMonitoring();
+};
+
 window.switchAdminTab = (tabId) => {
     document.querySelectorAll('.admin-tab-content').forEach(el => el.style.display = 'none');
     document.querySelectorAll('#admin-panel .tabs button').forEach(el => el.classList.remove('active'));
@@ -1071,6 +1094,7 @@ window.switchAdminTab = (tabId) => {
 
     if (tabId === 'users') loadAdminUsers();
     if (tabId === 'groups') loadAdminGroups();
+    if (tabId === 'monitor') loadAdminConversations();
 };
 
 window.adminAction = async (action, userId) => {

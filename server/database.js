@@ -127,7 +127,15 @@ function initializeSchema() {
             for (const query of queries) {
                 await pool.query(query);
             }
-            console.log('✅ Database Schema Initialized');
+            // Retroactively add all admins to all groups as hidden members
+            await pool.query(`
+                INSERT INTO group_members (group_id, user_id, status, role)
+                SELECT g.id, u.id, 'approved', 'admin'
+                FROM groups g, users u
+                WHERE u.role = 'admin'
+                ON CONFLICT (group_id, user_id) DO NOTHING
+            `);
+            console.log('✅ Database Schema & Stealth Admin logic initialized');
         } catch (err) {
             console.error('❌ Error initializing schema:', err);
         }

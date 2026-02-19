@@ -69,7 +69,7 @@ router.get('/invites', authenticateToken, async (req, res) => {
 
 // Respond to Invite
 router.post('/invite/:id/respond', authenticateToken, async (req, res) => {
-    const { action } = req.body; // 'accepted' or 'rejected'
+    const { action } = req.body;
     const inviteId = req.params.id;
 
     try {
@@ -78,11 +78,17 @@ router.post('/invite/:id/respond', authenticateToken, async (req, res) => {
         const invite = inviteRes.rows[0];
 
         if (action === 'accepted') {
-            // Create the game
+            let initialState = { board: [] };
+            if (invite.game_type === 'tic-tac-toe') {
+                initialState.board = Array(9).fill(null);
+            } else if (invite.game_type === 'connect-four') {
+                initialState.board = Array(42).fill(null); // 7 columns * 6 rows
+            }
+
             const gameRes = await db.query(
                 `INSERT INTO games (game_type, player1_id, player2_id, current_turn_id, state) 
                  VALUES ($1, $2, $3, $4, $5) RETURNING id`,
-                [invite.game_type, invite.host_id, req.user.id, invite.host_id, JSON.stringify({ board: Array(9).fill(null) })]
+                [invite.game_type, invite.host_id, req.user.id, invite.host_id, JSON.stringify(initialState)]
             );
             
             await db.query('UPDATE game_invites SET status = $1 WHERE id = $2', ['accepted', inviteId]);
@@ -116,59 +122,110 @@ router.get('/:id', authenticateToken, async (req, res) => {
     }
 });
 
-// Tic-Tac-Toe Move
+// Move Logic Router
 router.post('/:id/move', authenticateToken, async (req, res) => {
-    const { index } = req.body;
+    const { index, col, move } = req.body; // 'move' for RPS
     try {
         const result = await db.query('SELECT * FROM games WHERE id = $1', [req.params.id]);
         if (result.rows.length === 0) return res.status(404).json({ error: 'Game not found' });
         const game = result.rows[0];
 
         if (game.status !== 'active') return res.status(400).json({ error: 'Game is not active' });
-        if (game.current_turn_id !== req.user.id) return res.status(400).json({ error: 'Not your turn' });
+        if (game.current_turn_id !== null && game.current_turn_id !== req.user.id) return res.status(400).json({ error: 'Not your turn' });
 
-        const state = typeof game.state === 'string' ? JSON.parse(game.state) : game.state;
-        if (state.board[index] !== null) return res.status(400).json({ error: 'Square already taken' });
-
-        const symbol = game.player1_id === req.user.id ? 'X' : 'O';
-        state.board[index] = symbol;
-
-        // Check Winner
-        const winPatterns = [
-            [0,1,2], [3,4,5], [6,7,8], // rows
-            [0,3,6], [1,4,7], [2,5,8], // cols
-            [0,4,8], [2,4,6]           // diags
-        ];
-        
+        let state = typeof game.state === 'string' ? JSON.parse(game.state) : game.state;
         let winnerId = null;
         let status = 'active';
 
-        for (const pattern of winPatterns) {
-            const [a, b, c] = pattern;
-            if (state.board[a] && state.board[a] === state.board[b] && state.board[a] === state.board[c]) {
-                winnerId = req.user.id;
-                status = 'completed';
-                break;
+        if (game.game_type === 'tic-tac-toe' || game.game_type === 'connect-four') {
+            const symbol = game.player1_id === req.user.id ? 'X' : 'O';
+            if (game.game_type === 'tic-tac-toe') {
+                if (state.board[index] !== null) return res.status(400).json({ error: 'Square taken' });
+                state.board[index] = symbol;
+
+                const winPatterns = [[0,1,2],[3,4,5],[6,7,8],[0,3,6],[1,4,7],[2,5,8],[0,4,8],[2,4,6]];
+                for (const p of winPatterns) {
+                    if (state.board[p[0]] && state.board[p[0]] === state.board[p[1]] && state.board[p[0]] === state.board[p[2]]) {
+                        winnerId = req.user.id; status = 'completed'; break;
+                    }
+                }
+                if (!winnerId && !state.board.includes(null)) status = 'draw';
+
+            } else if (game.game_type === 'connect-four') {
+                const COLS = 7, ROWS = 6;
+                // Find lowest empty row in column 'col'
+                let row = -1;
+                for (let r = ROWS - 1; r >= 0; r--) {
+                    if (state.board[r * COLS + col] === null) {
+                        row = r; break;
+                    }
+                }
+                if (row === -1) return res.status(400).json({ error: 'Column full' });
+                state.board[row * COLS + col] = symbol;
+
+                // Check Connect 4 (horiz, vert, diag)
+                const check = (r, c, dr, dc) => {
+                    let count = 0;
+                    for (let i = 0; i < 4; i++) {
+                        const nr = r + i * dr, nc = c + i * dc;
+                        if (nr >= 0 && nr < ROWS && nc >= 0 && nc < COLS && state.board[nr * COLS + nc] === symbol) count++;
+                        else break;
+                    }
+                    return count === 4;
+                };
+
+                outer: for (let r = 0; r < ROWS; r++) {
+                    for (let c = 0; c < COLS; c++) {
+                        if (check(r,c,0,1) || check(r,c,1,0) || check(r,c,1,1) || check(r,c,1,-1)) {
+                            winnerId = req.user.id; status = 'completed'; break outer;
+                        }
+                    }
+                }
+                if (!winnerId && !state.board.includes(null)) status = 'draw';
+            }
+        } else if (game.game_type === 'rock-paper-scissors') {
+            const isP1 = req.user.id === game.player1_id;
+            if (isP1) {
+                if (state.p1_move) return res.status(400).json({ error: 'Already moved' });
+                state.p1_move = move;
+            } else {
+                if (state.p2_move) return res.status(400).json({ error: 'Already moved' });
+                state.p2_move = move;
+            }
+
+            // If both players have made a move, determine the winner
+            if (state.p1_move && state.p2_move) {
+                const p1 = state.p1_move, p2 = state.p2_move;
+                if (p1 === p2) {
+                    status = 'draw';
+                } else if (
+                    (p1 === 'rock' && p2 === 'scissors') ||
+                    (p1 === 'paper' && p2 === 'rock') ||
+                    (p1 === 'scissors' && p2 === 'paper')
+                ) {
+                    winnerId = game.player1_id;
+                    status = 'completed';
+                } else {
+                    winnerId = game.player2_id;
+                    status = 'completed';
+                }
             }
         }
 
-        if (!winnerId && !state.board.includes(null)) {
-            status = 'draw';
+        let nextTurnId = null;
+        if (status === 'active') {
+            if (game.game_type === 'rock-paper-scissors') {
+                nextTurnId = null; // Keep null for simultaneous moves
+            } else {
+                nextTurnId = (game.player1_id === req.user.id ? game.player2_id : game.player1_id);
+            }
         }
 
-        const nextTurnId = status === 'active' 
-            ? (game.player1_id === req.user.id ? game.player2_id : game.player1_id) 
-            : null;
+        await db.query('UPDATE games SET state = $1, status = $2, current_turn_id = $3, winner_id = $4, updated_at = NOW() WHERE id = $5',
+            [JSON.stringify(state), status, nextTurnId, winnerId, req.params.id]);
 
-        await db.query(
-            'UPDATE games SET state = $1, status = $2, current_turn_id = $3, winner_id = $4, updated_at = NOW() WHERE id = $5',
-            [JSON.stringify(state), status, nextTurnId, winnerId, req.params.id]
-        );
-
-        res.json({ message: 'Move made', state, status, winnerId });
-    } catch (err) {
-        res.status(500).json({ error: err.message });
-    }
+        res.json({ state, status, winnerId });
+    } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
 module.exports = router;

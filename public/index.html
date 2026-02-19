@@ -452,10 +452,15 @@
                             <h4>Tic-Tac-Toe</h4>
                             <p>Classic 3x3 battle</p>
                         </div>
-                        <div class="game-tile glass disabled">
-                            <div class="game-icon">♟️</div>
-                            <h4>Chess</h4>
-                            <p>Coming Soon</p>
+                        <div class="game-tile glass" onclick="selectGame('connect-four')">
+                            <div class="game-icon">🟡🔴</div>
+                            <h4>Connect Four</h4>
+                            <p>Get 4 in a row!</p>
+                        </div>
+                        <div class="game-tile glass" onclick="selectGame('rock-paper-scissors')">
+                            <div class="game-icon">✊✋✌️</div>
+                            <h4>Rock-Paper-Scissors</h4>
+                            <p>Ultimate showdown</p>
                         </div>
                     </div>
                 </div>
@@ -484,7 +489,7 @@
         <div id="game-play-overlay" style="display:none;">
             <div class="modal-card glass game-board-card">
                 <div class="modal-header">
-                    <h3 id="game-title">Tic-Tac-Toe</h3>
+                    <h3 id="game-title">Game</h3>
                     <button id="close-play-modal" class="icon-btn">
                         <span class="material-symbols-rounded">close</span>
                     </button>
@@ -504,16 +509,11 @@
 
                 <div id="game-turn-indicator" class="turn-indicator">Your Turn!</div>
 
-                <div id="ttt-board" class="tic-tac-toe-grid">
-                    <div class="cell" data-index="0" onclick="makeMove(0)"></div>
-                    <div class="cell" data-index="1" onclick="makeMove(1)"></div>
-                    <div class="cell" data-index="2" onclick="makeMove(2)"></div>
-                    <div class="cell" data-index="3" onclick="makeMove(3)"></div>
-                    <div class="cell" data-index="4" onclick="makeMove(4)"></div>
-                    <div class="cell" data-index="5" onclick="makeMove(5)"></div>
-                    <div class="cell" data-index="6" onclick="makeMove(6)"></div>
-                    <div class="cell" data-index="7" onclick="makeMove(7)"></div>
-                    <div class="cell" data-index="8" onclick="makeMove(8)"></div>
+                <!-- Dynamic Game Board Container -->
+                <div id="game-board-container"></div>
+
+                <div id="game-actions" style="display:none; margin-top: 1.5rem; text-align: center;">
+                    <button class="btn-primary" onclick="openGameHub()">Play Another</button>
                 </div>
             </div>
         </div>

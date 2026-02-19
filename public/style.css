@@ -1816,7 +1816,7 @@ input:checked + .slider:before {
     text-align: center;
     border-radius: var(--radius-lg);
     cursor: pointer;
-    transition: all var(--transition-medium);
+    transition: all var(--transition-smooth);
     border: 1px solid var(--border);
 }
 
@@ -1824,22 +1824,6 @@ input:checked + .slider:before {
     transform: translateY(-5px);
     background: var(--accent-subtle);
     border-color: var(--accent);
-}
-
-.game-tile.disabled {
-    opacity: 0.5;
-    cursor: not-allowed;
-    filter: grayscale(1);
-}
-
-.game-icon {
-    font-size: 2.5rem;
-    margin-bottom: 0.75rem;
-}
-
-.game-board-card {
-    width: 380px !important;
-    padding: 1.5rem !important;
 }
 
 .game-status-bar {
@@ -1878,15 +1862,37 @@ input:checked + .slider:before {
     height: 1.2rem;
 }
 
+.game-board-card {
+    width: auto !important;
+    min-width: 380px;
+    max-width: 95vw;
+    padding: 1.5rem !important;
+}
+
+/* Tic Tac Toe Specific */
 .tic-tac-toe-grid {
     display: grid;
     grid-template-columns: repeat(3, 1fr);
     gap: 8px;
+    width: 300px;
+    margin: 0 auto;
+}
+
+/* Connect Four Specific */
+.connect-four-grid {
+    display: grid;
+    grid-template-columns: repeat(7, 1fr);
+    gap: 6px;
+    background: var(--bg-tertiary);
+    padding: 10px;
+    border-radius: var(--radius-md);
+    width: 480px;
+    margin: 0 auto;
 }
 
 .cell {
     aspect-ratio: 1/1;
-    background: var(--bg-tertiary);
+    background: var(--bg-secondary);
     border-radius: var(--radius-md);
     display: flex;
     align-items: center;
@@ -1895,14 +1901,70 @@ input:checked + .slider:before {
     font-weight: 800;
     cursor: pointer;
     transition: all var(--transition-fast);
+    border: 1px solid var(--border);
 }
 
-.cell:hover {
+.c4-cell {
+    border-radius: 50%;
+    background: var(--bg-primary);
+    width: 100%;
+}
+
+.cell:hover:not(.taken) {
     background: var(--accent-subtle);
+    border-color: var(--accent);
 }
 
 .cell.x { color: var(--accent); }
-.cell.o { color: #ec4899; }
+.cell.o { color: #f43f5e; } /* Consistent with Red for Connect 4 O */
+
+.cell.c4-x { background: var(--accent) !important; box-shadow: 0 0 15px var(--accent-glow); }
+.cell.c4-o { background: #f43f5e !important; box-shadow: 0 0 15px rgba(244, 63, 94, 0.3); }
+
+/* Rock Paper Scissors Specific */
+.rps-grid {
+    display: flex;
+    justify-content: center;
+    gap: 15px;
+    margin: 2rem 0;
+}
+
+.rps-btn {
+    width: 80px;
+    height: 80px;
+    font-size: 2.5rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: var(--radius-md);
+    background: var(--bg-tertiary);
+    border: 2px solid var(--border);
+    cursor: pointer;
+    transition: all var(--transition-normal);
+}
+
+.rps-btn:hover:not(.disabled) {
+    background: var(--accent-subtle);
+    border-color: var(--accent);
+    transform: scale(1.1);
+}
+
+.rps-btn.active {
+    background: var(--accent) !important;
+    border-color: var(--accent);
+    color: white;
+}
+
+.rps-btn.disabled { opacity: 0.5; cursor: not-allowed; }
+
+.rps-reveal {
+    font-size: 4rem;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    gap: 40px;
+    margin: 2rem 0;
+}
 
 @keyframes slideDown {
     from { opacity: 0; transform: translateY(-10px); }

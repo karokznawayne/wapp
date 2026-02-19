@@ -1632,26 +1632,82 @@ async function pollGameState() {
     try {
         const res = await fetch(`${API_URL}/games/${currentGameId}`, { headers: { 'Authorization': `Bearer ${token}` } });
         const game = await res.json();
-        renderTTTBoard(game);
+        renderGameBoard(game);
         
         if (game.status !== 'active') {
             clearInterval(gamePollingInterval);
             const msg = game.status === 'draw' ? "It's a draw!" : 
                        (game.winner_id === currentUser.id ? "You Won! 🎉" : "You Lost! 💀");
             document.getElementById('game-turn-indicator').textContent = msg;
+            document.getElementById('game-actions').style.display = 'block';
+        } else {
+            document.getElementById('game-actions').style.display = 'none';
         }
     } catch (e) { }
 }
 
-function renderTTTBoard(game) {
+function renderGameBoard(game) {
+    const container = document.getElementById('game-board-container');
     const state = typeof game.state === 'string' ? JSON.parse(game.state) : game.state;
-    const board = state.board;
-    const cells = document.querySelectorAll('#ttt-board .cell');
     
-    board.forEach((val, i) => {
-        cells[i].textContent = val || '';
-        cells[i].className = `cell ${val ? val.toLowerCase() : ''}`;
-    });
+    const titles = { 'tic-tac-toe': 'Tic-Tac-Toe', 'connect-four': 'Connect Four', 'rock-paper-scissors': 'Rock-Paper-Scissors' };
+    document.getElementById('game-title').textContent = titles[game.game_type] || 'Game';
+    
+    // Create board if not exists or type changed
+    if (!container.firstElementChild || container.dataset.type !== game.game_type) {
+        container.dataset.type = game.game_type;
+        if (game.game_type === 'tic-tac-toe') {
+            container.innerHTML = `<div class="tic-tac-toe-grid">${state.board.map((_, i) => `<div class="cell" onclick="makeMove(${i})"></div>`).join('')}</div>`;
+        } else if (game.game_type === 'connect-four') {
+            container.innerHTML = `<div class="connect-four-grid">${state.board.map((_, i) => `<div class="cell c4-cell" onclick="makeMove(null, ${i % 7})"></div>`).join('')}</div>`;
+        } else if (game.game_type === 'rock-paper-scissors') {
+            container.innerHTML = `
+                <div id="rps-selection" class="rps-grid">
+                    <button class="rps-btn" onclick="makeMove(null, null, 'rock')">✊</button>
+                    <button class="rps-btn" onclick="makeMove(null, null, 'paper')">✋</button>
+                    <button class="rps-btn" onclick="makeMove(null, null, 'scissors')">✌️</button>
+                </div>
+                <div id="rps-reveal" class="rps-reveal" style="display:none;"></div>
+            `;
+        }
+    }
+
+    if (game.game_type === 'tic-tac-toe' || game.game_type === 'connect-four') {
+        const cells = container.querySelectorAll('.cell');
+        state.board.forEach((val, i) => {
+            if (game.game_type === 'tic-tac-toe') {
+                cells[i].textContent = val || '';
+                cells[i].className = `cell ${val ? val.toLowerCase() : ''} ${val ? 'taken' : ''}`;
+            } else {
+                cells[i].className = `cell c4-cell ${val ? (val === 'X' ? 'c4-x' : 'c4-o') : ''} ${val ? 'taken' : ''}`;
+            }
+        });
+    } else if (game.game_type === 'rock-paper-scissors') {
+        const isP1 = currentUser.id === game.player1_id;
+        const myMove = isP1 ? state.p1_move : state.p2_move;
+        const oppMove = isP1 ? state.p2_move : state.p1_move;
+        
+        const selection = document.getElementById('rps-selection');
+        const reveal = document.getElementById('rps-reveal');
+        
+        if (state.p1_move && state.p2_move) {
+            selection.style.display = 'none';
+            reveal.style.display = 'flex';
+            const icons = { rock: '✊', paper: '✋', scissors: '✌️' };
+            reveal.innerHTML = `
+                <div style="text-align:center"><div>${icons[state.p1_move]}</div><small>${game.player1_name}</small></div>
+                <div style="font-size:1.5rem">VS</div>
+                <div style="text-align:center"><div>${icons[state.p2_move]}</div><small>${game.player2_name}</small></div>
+            `;
+        } else {
+            selection.style.display = 'flex';
+            reveal.style.display = 'none';
+            selection.querySelectorAll('.rps-btn').forEach(btn => {
+                const move = btn.innerText === '✊' ? 'rock' : btn.innerText === '✋' ? 'paper' : 'scissors';
+                btn.className = `rps-btn ${myMove === move ? 'active' : ''} ${myMove ? 'disabled' : ''}`;
+            });
+        }
+    }
 
     document.getElementById('game-p1-name').textContent = game.player1_name;
     document.getElementById('game-p2-name').textContent = game.player2_name;
@@ -1660,16 +1716,22 @@ function renderTTTBoard(game) {
 
     const indicator = document.getElementById('game-turn-indicator');
     if (game.status === 'active') {
-        indicator.textContent = game.current_turn_id === currentUser.id ? "Your Turn!" : "Waiting for Opponent...";
+        if (game.game_type === 'rock-paper-scissors') {
+            const isP1 = currentUser.id === game.player1_id;
+            const moved = isP1 ? state.p1_move : state.p2_move;
+            indicator.textContent = moved ? "Waiting for Opponent..." : "Make your Move!";
+        } else {
+            indicator.textContent = game.current_turn_id === currentUser.id ? "Your Turn!" : "Waiting for Opponent...";
+        }
     }
 }
 
-window.makeMove = async (index) => {
+window.makeMove = async (index, col = null, move = null) => {
     try {
         const res = await fetch(`${API_URL}/games/${currentGameId}/move`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-            body: JSON.stringify({ index })
+            body: JSON.stringify({ index, col, move })
         });
         if (res.ok) {
             pollGameState();

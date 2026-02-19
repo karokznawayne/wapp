@@ -83,6 +83,8 @@ function initializeSchema() {
             ALTER TABLE messages ADD COLUMN IF NOT EXISTS reply_to_id INTEGER REFERENCES messages(id);
             ALTER TABLE messages ADD COLUMN IF NOT EXISTS deleted BOOLEAN DEFAULT FALSE;
             ALTER TABLE messages ADD COLUMN IF NOT EXISTS deleted_for_everyone BOOLEAN DEFAULT FALSE;
+            ALTER TABLE messages ADD COLUMN IF NOT EXISTS attachment_url TEXT;
+            ALTER TABLE messages ADD COLUMN IF NOT EXISTS attachment_type VARCHAR(50);
         END $$`,
         // Friendships
         `CREATE TABLE IF NOT EXISTS friendships (

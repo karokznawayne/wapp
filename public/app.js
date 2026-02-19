@@ -636,11 +636,31 @@ async function loadMessages(isPoll = false) {
                 // Deleted message
                 const content = m.deleted_for_everyone ? `<em style="opacity:0.6">🚫 This message was deleted</em>` : escapeHtml(m.content);
 
+                // Attachment
+                let attachmentHtml = '';
+                if (m.attachment_url) {
+                    if (m.attachment_type === 'image') {
+                        attachmentHtml = `
+                            <div class="attachment-bubble">
+                                <img src="${m.attachment_url}" class="attachment-image" onclick="window.open('${m.attachment_url}', '_blank')">
+                            </div>`;
+                    } else if (m.attachment_type === 'pdf') {
+                        attachmentHtml = `
+                            <div class="attachment-bubble">
+                                <a href="${m.attachment_url}" target="_blank" class="pdf-link">
+                                    <span class="material-symbols-rounded">picture_as_pdf</span>
+                                    <span>Document.pdf</span>
+                                </a>
+                            </div>`;
+                    }
+                }
+
                 html += `<div class="message ${isMe ? 'sent' : 'received'}" id="msg-${m.id}" 
                               oncontextmenu="showMessageMenu(event, ${m.id}, ${isMe}, '${escapeAttr(m.content)}', '${m.sender}')">
                     ${!isMe && activeChat.type === 'group' ? `<div class="message-sender">${m.sender}</div>` : ''}
                     ${replyHtml}
-                    <div>${content}</div>
+                    ${attachmentHtml}
+                    ${m.content ? `<div>${content}</div>` : ''}
                     <div class="message-info">
                         <span>${time}</span>
                         ${ticks}
@@ -680,12 +700,34 @@ document.getElementById('chat-input-form').addEventListener('submit', async (e) 
     e.preventDefault();
     const input = document.getElementById('message-input');
     const content = input.value.trim();
-    if (!content || !activeChat) return;
+    if (!content && !document.getElementById('attachment-input').files[0] && !activeChat) return;
 
     const body = { content };
     if (activeChat.type === 'group') body.groupId = activeChat.id;
     else body.receiverId = activeChat.id;
     if (replyingTo) body.replyToId = replyingTo.id;
+
+    // Handle File Attachment if present
+    const fileInput = document.getElementById('attachment-input');
+    if (fileInput.files[0]) {
+        const formData = new FormData();
+        formData.append('file', fileInput.files[0]);
+        
+        try {
+            const uploadRes = await fetch(`${API_URL}/messages/upload`, {
+                method: 'POST',
+                headers: { 'Authorization': `Bearer ${token}` },
+                body: formData
+            });
+            const uploadData = await uploadRes.json();
+            body.attachment_url = uploadData.url;
+            body.attachment_type = uploadData.type;
+            if (!content) body.content = ''; // Allow empty content with image
+        } catch (e) {
+            showToast('Error', 'File upload failed');
+            return;
+        }
+    }
 
     await fetch(`${API_URL}/messages`, {
         method: 'POST',
@@ -693,10 +735,23 @@ document.getElementById('chat-input-form').addEventListener('submit', async (e) 
         body: JSON.stringify(body)
     });
     input.value = '';
+    fileInput.value = '';
+    document.getElementById('attach-btn').style.color = 'inherit';
     replyingTo = null;
     hideReplyBar();
     loadMessages();
 });
+
+// Attachments
+document.getElementById('attach-btn').onclick = () => document.getElementById('attachment-input').click();
+document.getElementById('attachment-input').onchange = (e) => {
+    if (e.target.files[0]) {
+        document.getElementById('attach-btn').style.color = 'var(--accent)';
+        showToast('System', `File "${e.target.files[0].name}" attached`);
+    } else {
+        document.getElementById('attach-btn').style.color = 'inherit';
+    }
+};
 
 // Typing indicator on input
 let typingTimeout;
@@ -962,7 +1017,7 @@ async function showGroupInfo(groupId, groupName) {
             <div class="chat-item-container">
                 <div class="avatar" style="width:34px; height:34px; font-size:0.8rem; background:${getAvatarColor(m.username)}">${m.username[0].toUpperCase()}</div>
                 <div class="chat-info">
-                    <div class="chat-name">${m.username} ${m.role === 'admin' ? '👑' : ''}</div>
+                    <div class="chat-name">${m.username} ${m.group_role === 'admin' ? '👑' : ''}</div>
                     <div style="font-size:0.72rem; color:var(--text-muted);">${m.status}</div>
                 </div>
             </div>
@@ -972,7 +1027,7 @@ async function showGroupInfo(groupId, groupName) {
     const myMembership = members.find(m => m.username === currentUser.username);
     const actionsDiv = document.getElementById('group-actions');
 
-    if (myMembership && myMembership.role === 'admin') {
+    if (myMembership && myMembership.group_role === 'admin') {
         actionsDiv.style.display = 'block';
         populateFriendDropdown(groupId, members);
     } else {

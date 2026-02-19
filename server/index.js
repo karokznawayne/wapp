@@ -18,8 +18,9 @@ app.use('/api/messages', require('./routes/messages'));
 app.use('/api/admin', require('./routes/admin'));
 app.use('/api/games', require('./routes/games')); // Protected by isAdmin middleware inside
 
-// Serve Static Files (Frontend)
+// Serve Static Files (Frontend & Uploads)
 app.use(express.static(path.join(__dirname, '../public')));
+app.use('/uploads', express.static(path.join(__dirname, '../uploads')));
 
 // Catch-all route for SPA
 app.get('*', (req, res) => {

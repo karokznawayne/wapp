@@ -2,6 +2,37 @@ const express = require('express');
 const router = express.Router();
 const db = require('../database');
 const { authenticateToken } = require('../middleware/auth');
+const multer = require('multer');
+const path = require('path');
+const fs = require('fs');
+
+// Ensure uploads dir exists
+const uploadDir = path.join(__dirname, '../../uploads');
+if (!fs.existsSync(uploadDir)) {
+    fs.mkdirSync(uploadDir, { recursive: true });
+}
+
+const storage = multer.diskStorage({
+    destination: (req, file, cb) => cb(null, uploadDir),
+    filename: (req, file, cb) => {
+        const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1e9);
+        cb(null, uniqueSuffix + path.extname(file.originalname));
+    }
+});
+
+const upload = multer({
+    storage: storage,
+    limits: { fileSize: 10 * 1024 * 1024 }, // 10MB
+    fileFilter: (req, file, cb) => {
+        const allowedTypes = /jpeg|jpg|png|gif|pdf/;
+        const ext = allowedTypes.test(path.extname(file.originalname).toLowerCase());
+        const mime = allowedTypes.test(file.mimetype);
+        if (ext && mime) {
+            return cb(null, true);
+        }
+        cb(new Error('Only Images and PDFs are allowed'));
+    }
+});
 
 // Send Message (with reply support)
 router.post('/', authenticateToken, async (req, res) => {
@@ -11,8 +42,8 @@ router.post('/', authenticateToken, async (req, res) => {
 
     try {
         const result = await db.query(
-            'INSERT INTO messages (sender_id, receiver_id, group_id, content, read_status, reply_to_id) VALUES ($1, $2, $3, $4, FALSE, $5) RETURNING id, timestamp, read_status',
-            [req.user.id, receiverId || null, groupId || null, content, replyToId || null]
+            'INSERT INTO messages (sender_id, receiver_id, group_id, content, read_status, reply_to_id, attachment_url, attachment_type) VALUES ($1, $2, $3, $4, FALSE, $5, $6, $7) RETURNING id, timestamp, read_status',
+            [req.user.id, receiverId || null, groupId || null, content, replyToId || null, req.body.attachment_url || null, req.body.attachment_type || null]
         );
         const row = result.rows[0];
 
@@ -24,6 +55,18 @@ router.post('/', authenticateToken, async (req, res) => {
         }
 
         res.json({ id: row.id, timestamp: row.timestamp, is_read: row.read_status });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// Upload Attachment
+router.post('/upload', authenticateToken, upload.single('file'), async (req, res) => {
+    try {
+        if (!req.file) return res.status(400).json({ error: 'File required' });
+        const fileUrl = `/uploads/${req.file.filename}`;
+        const fileType = req.file.mimetype.startsWith('image/') ? 'image' : 'pdf';
+        res.json({ url: fileUrl, type: fileType });
     } catch (err) {
         res.status(500).json({ error: err.message });
     }
@@ -42,7 +85,8 @@ router.get('/', authenticateToken, async (req, res) => {
                    COALESCE(
                        (SELECT json_agg(json_build_object('emoji', r.emoji, 'username', ru2.username, 'user_id', r.user_id))
                         FROM reactions r JOIN users ru2 ON ru2.id = r.user_id WHERE r.message_id = m.id), '[]'
-                   ) as reactions
+                   ) as reactions,
+                   m.attachment_url, m.attachment_type
             FROM messages m
             JOIN users u ON m.sender_id = u.id
             LEFT JOIN messages rm ON m.reply_to_id = rm.id

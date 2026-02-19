@@ -499,14 +499,17 @@ window.openChat = async (type, id, name) => {
     document.getElementById('main-chat-area').classList.add('open');
     document.getElementById('back-btn').style.display = 'flex';
 
-    // Group Info Button
+    // Group Info & Games
     const groupInfoBtn = document.getElementById('group-info-btn');
+    const groupGameBtn = document.getElementById('group-game-btn');
     if (type === 'group') {
         groupInfoBtn.style.display = 'flex';
+        groupGameBtn.style.display = 'flex';
         groupInfoBtn.onclick = () => showGroupInfo(id, name);
         document.getElementById('chat-subtitle').textContent = 'tap ℹ️ for group info';
     } else {
         groupInfoBtn.style.display = 'none';
+        groupGameBtn.style.display = 'none';
         // Show online status
         updateChatSubtitle(id);
     }
@@ -1479,8 +1482,17 @@ const gamePlayModal = document.getElementById('game-play-overlay');
 let selectedGameType = null;
 let currentGameId = null;
 let gamePollingInterval = null;
+let groupGameContext = null; // Stored groupId if starting from group
 
 window.openGameHub = () => {
+    groupGameContext = null;
+    gameModal.style.display = 'flex';
+    backToGameSelection();
+};
+
+window.openGroupGameMenu = () => {
+    if (!activeChat || activeChat.type !== 'group') return;
+    groupGameContext = activeChat.id;
     gameModal.style.display = 'flex';
     backToGameSelection();
 };
@@ -1494,10 +1506,44 @@ window.backToGameSelection = () => {
 
 window.selectGame = (type) => {
     selectedGameType = type;
+    if (groupGameContext) {
+        // Group games start immediately if it's a group-compatible game
+        if (type === 'quick-math') {
+            startGroupGame(groupGameContext, type);
+            return;
+        }
+    }
     document.getElementById('game-selection-view').style.display = 'none';
     document.getElementById('game-invite-view').style.display = 'block';
     loadRecentPlayers();
 };
+
+async function startGroupGame(groupId, gameType) {
+    try {
+        const res = await fetch(`${API_URL}/games/start-group`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+            body: JSON.stringify({ groupId, gameType })
+        });
+        if (res.ok) {
+            const data = await res.json();
+            gameModal.style.display = 'none';
+            startLocalGame(data.gameId);
+            
+            // Post a system message to the group
+            const gameTitles = { 'quick-math': 'Quick Math' };
+            await fetch(`${API_URL}/messages/send`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+                body: JSON.stringify({ 
+                    groupId, 
+                    content: `🎮 I started a game of ${gameTitles[gameType] || gameType}! Tap the "Fun Zone" or "Start Game" to join!` 
+                })
+            });
+            loadMessages();
+        }
+    } catch (e) { showToast('Error', 'Failed to start group game'); }
+}
 
 async function loadRecentPlayers() {
     const res = await fetch(`${API_URL}/games/recent-players`, { headers: { 'Authorization': `Bearer ${token}` } });
@@ -1543,7 +1589,7 @@ window.invitePlayer = async (guestId) => {
         const res = await fetch(`${API_URL}/games/invite`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-            body: JSON.stringify({ guestId, gameType: selectedGameType })
+            body: JSON.stringify({ guestId, gameType: selectedGameType, groupId: groupGameContext })
         });
         if (res.ok) {
             showToast('Gaming', 'Invite sent! Wait for them to accept.');
@@ -1570,7 +1616,7 @@ async function checkGameInvites() {
         container.style.display = 'block';
         list.innerHTML = invites.map(inv => `
             <li class="glass" style="margin-bottom:8px; padding:8px; border-radius:8px; display:flex; flex-direction:column; gap:5px;">
-                <div style="font-size:0.8rem; font-weight:600;">${inv.host_name} wants to play ${inv.game_type}</div>
+                <div style="font-size:0.8rem; font-weight:600;">${inv.host_name} wants to play ${inv.game_type} ${inv.group_id ? 'in group' : ''}</div>
                 <div style="display:flex; gap:5px;">
                     <button class="btn-xs" style="flex:1" onclick="respondToInvite(${inv.id}, 'accepted')">Accept</button>
                     <button class="btn-xs btn-danger" style="flex:1" onclick="respondToInvite(${inv.id}, 'rejected')">Decline</button>
@@ -1636,8 +1682,13 @@ async function pollGameState() {
         
         if (game.status !== 'active') {
             clearInterval(gamePollingInterval);
-            const msg = game.status === 'draw' ? "It's a draw!" : 
+            let msg = '';
+            if (game.game_type === 'quick-math') {
+                msg = game.winner_id === currentUser.id ? "You Solved It! 🚀" : "Someone else solved it! 🏁";
+            } else {
+                msg = game.status === 'draw' ? "It's a draw!" : 
                        (game.winner_id === currentUser.id ? "You Won! 🎉" : "You Lost! 💀");
+            }
             document.getElementById('game-turn-indicator').textContent = msg;
             document.getElementById('game-actions').style.display = 'block';
         } else {
@@ -1650,7 +1701,7 @@ function renderGameBoard(game) {
     const container = document.getElementById('game-board-container');
     const state = typeof game.state === 'string' ? JSON.parse(game.state) : game.state;
     
-    const titles = { 'tic-tac-toe': 'Tic-Tac-Toe', 'connect-four': 'Connect Four', 'rock-paper-scissors': 'Rock-Paper-Scissors' };
+    const titles = { 'tic-tac-toe': 'Tic-Tac-Toe', 'connect-four': 'Connect Four', 'rock-paper-scissors': 'Rock-Paper-Scissors', 'chess': 'Chess', 'quick-math': 'Quick Math' };
     document.getElementById('game-title').textContent = titles[game.game_type] || 'Game';
     
     // Create board if not exists or type changed
@@ -1669,9 +1720,25 @@ function renderGameBoard(game) {
                 </div>
                 <div id="rps-reveal" class="rps-reveal" style="display:none;"></div>
             `;
+        } else if (game.game_type === 'chess') {
+            container.innerHTML = `<div class="chess-board glass" style="padding:20px; text-align:center;">
+                <p style="color:var(--text-secondary)">Board Visualization Coming Soon</p>
+                <div style="font-family:monospace; background:var(--bg-primary); padding:10px; border-radius:5px;">${state.fen}</div>
+            </div>`;
+        } else if (game.game_type === 'quick-math') {
+            container.innerHTML = `
+                <div class="math-challenge glass" style="padding:2rem; text-align:center;">
+                    <h2 id="math-problem" style="font-size:3rem; margin-bottom:1.5rem;">${state.problem}</h2>
+                    <div style="display:flex; gap:10px;">
+                        <input type="number" id="math-answer" placeholder="Your answer..." class="glass" style="flex:1; padding:12px; border-radius:12px; border:1px solid var(--border); background:var(--bg-primary); color:white;">
+                        <button class="btn-primary" onclick="submitMathAnswer()">Solve</button>
+                    </div>
+                </div>
+            `;
         }
     }
 
+    // Sync state for TTT/C4
     if (game.game_type === 'tic-tac-toe' || game.game_type === 'connect-four') {
         const cells = container.querySelectorAll('.cell');
         state.board.forEach((val, i) => {
@@ -1685,8 +1752,6 @@ function renderGameBoard(game) {
     } else if (game.game_type === 'rock-paper-scissors') {
         const isP1 = currentUser.id === game.player1_id;
         const myMove = isP1 ? state.p1_move : state.p2_move;
-        const oppMove = isP1 ? state.p2_move : state.p1_move;
-        
         const selection = document.getElementById('rps-selection');
         const reveal = document.getElementById('rps-reveal');
         
@@ -1694,11 +1759,7 @@ function renderGameBoard(game) {
             selection.style.display = 'none';
             reveal.style.display = 'flex';
             const icons = { rock: '✊', paper: '✋', scissors: '✌️' };
-            reveal.innerHTML = `
-                <div style="text-align:center"><div>${icons[state.p1_move]}</div><small>${game.player1_name}</small></div>
-                <div style="font-size:1.5rem">VS</div>
-                <div style="text-align:center"><div>${icons[state.p2_move]}</div><small>${game.player2_name}</small></div>
-            `;
+            reveal.innerHTML = `<div style="text-align:center"><div>${icons[state.p1_move]}</div><small>${game.player1_name}</small></div><div style="font-size:1.5rem">VS</div><div style="text-align:center"><div>${icons[state.p2_move]}</div><small>${game.player2_name}</small></div>`;
         } else {
             selection.style.display = 'flex';
             reveal.style.display = 'none';
@@ -1709,10 +1770,19 @@ function renderGameBoard(game) {
         }
     }
 
-    document.getElementById('game-p1-name').textContent = game.player1_name;
-    document.getElementById('game-p2-name').textContent = game.player2_name;
-    setAvatar('game-p1-avatar', game.player1_name, game.player1_color);
-    setAvatar('game-p2-avatar', game.player2_name, game.player2_color);
+    if (game.group_id) {
+        document.getElementById('p1-info').style.display = 'none';
+        document.getElementById('p2-info').style.display = 'none';
+        document.querySelector('.vs-badge').textContent = game.group_name;
+    } else {
+        document.getElementById('p1-info').style.display = 'flex';
+        document.getElementById('p2-info').style.display = 'flex';
+        document.querySelector('.vs-badge').textContent = 'VS';
+        document.getElementById('game-p1-name').textContent = game.player1_name;
+        document.getElementById('game-p2-name').textContent = game.player2_name;
+        setAvatar('game-p1-avatar', game.player1_name, game.player1_color);
+        setAvatar('game-p2-avatar', game.player2_name, game.player2_color);
+    }
 
     const indicator = document.getElementById('game-turn-indicator');
     if (game.status === 'active') {
@@ -1720,18 +1790,28 @@ function renderGameBoard(game) {
             const isP1 = currentUser.id === game.player1_id;
             const moved = isP1 ? state.p1_move : state.p2_move;
             indicator.textContent = moved ? "Waiting for Opponent..." : "Make your Move!";
+        } else if (game.game_type === 'quick-math') {
+            indicator.textContent = "First to solve wins!";
         } else {
             indicator.textContent = game.current_turn_id === currentUser.id ? "Your Turn!" : "Waiting for Opponent...";
         }
     }
 }
 
-window.makeMove = async (index, col = null, move = null) => {
+window.submitMathAnswer = () => {
+    const input = document.getElementById('math-answer');
+    const answer = input.value;
+    if (!answer) return;
+    makeMove(null, null, null, answer);
+    input.value = '';
+};
+
+window.makeMove = async (index, col = null, move = null, answer = null) => {
     try {
         const res = await fetch(`${API_URL}/games/${currentGameId}/move`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-            body: JSON.stringify({ index, col, move })
+            body: JSON.stringify({ index, col, move, answer })
         });
         if (res.ok) {
             pollGameState();

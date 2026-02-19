@@ -126,6 +126,7 @@ function initializeSchema() {
             game_type VARCHAR(50) NOT NULL,
             player1_id INTEGER REFERENCES users(id),
             player2_id INTEGER REFERENCES users(id),
+            group_id INTEGER REFERENCES groups(id),
             state JSONB DEFAULT '{}',
             status VARCHAR(20) DEFAULT 'active',
             current_turn_id INTEGER REFERENCES users(id),
@@ -139,9 +140,15 @@ function initializeSchema() {
             game_type VARCHAR(50) NOT NULL,
             host_id INTEGER REFERENCES users(id),
             guest_id INTEGER REFERENCES users(id),
+            group_id INTEGER REFERENCES groups(id),
             status VARCHAR(20) DEFAULT 'pending',
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-        )`
+        )`,
+        // Migration: Add group_id if missing
+        `DO $$ BEGIN
+            ALTER TABLE games ADD COLUMN IF NOT EXISTS group_id INTEGER REFERENCES groups(id);
+            ALTER TABLE game_invites ADD COLUMN IF NOT EXISTS group_id INTEGER REFERENCES groups(id);
+        END $$`
     ];
 
     const executeSchemas = async () => {

@@ -194,17 +194,23 @@
                         <div id="chat-title">Select a chat</div>
                         <div id="chat-subtitle" class="chat-subtitle">tap for info</div>
                     </div>
-                    <button id="group-info-btn" class="icon-btn" style="display:none;">
-                        <span class="material-symbols-rounded">info</span>
-                    </button>
+                    <div class="header-actions">
+                        <button id="group-game-btn" class="btn-ghost-sm" style="display:none;" onclick="openGroupGameMenu()">
+                            <span class="material-symbols-rounded">videogame_asset</span>
+                            <span>Start Game</span>
+                        </button>
+                        <button id="group-info-btn" class="icon-btn" style="display:none;">
+                            <span class="material-symbols-rounded">info</span>
+                        </button>
+                    </div>
                 </div>
 
                 <div id="chat-messages">
                     <div class="placeholder">
                         <div class="placeholder-content">
-                            <div class="placeholder-icon">💬</div>
-                            <h2>ChatVerse</h2>
-                            <p>Select a conversation to start messaging</p>
+                            <div class="placeholder-icon">🖇️</div>
+                            <h2>Friends App</h2>
+                            <p>Purely Social. Connect with friends and play games.</p>
                         </div>
                     </div>
                 </div>
@@ -461,6 +467,16 @@
                             <div class="game-icon">✊✋✌️</div>
                             <h4>Rock-Paper-Scissors</h4>
                             <p>Ultimate showdown</p>
+                        </div>
+                        <div class="game-tile glass" onclick="selectGame('chess')">
+                            <div class="game-icon">♟️</div>
+                            <h4>Chess</h4>
+                            <p>Grandmaster strategy</p>
+                        </div>
+                        <div class="game-tile glass" onclick="selectGame('quick-math')">
+                            <div class="game-icon">🧮</div>
+                            <h4>Quick Math</h4>
+                            <p>Group speed challenge</p>
                         </div>
                     </div>
                 </div>

@@ -705,6 +705,36 @@ li.active {
     min-width: 0;
 }
 
+.header-actions {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+.btn-ghost-sm {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 12px;
+    background: transparent;
+    color: var(--accent);
+    border: 1px solid var(--accent-subtle);
+    border-radius: var(--radius-md);
+    font-size: 0.85rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all var(--transition-fast);
+}
+
+.btn-ghost-sm:hover {
+    background: var(--accent-subtle);
+    border-color: var(--accent);
+}
+
+.btn-ghost-sm span {
+    font-size: 1.1rem;
+}
+
 .top-row {
     display: flex;
     justify-content: space-between;

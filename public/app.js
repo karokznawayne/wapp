@@ -1003,9 +1003,15 @@ async function populateFriendDropdown(groupId, currentMembers) {
 }
 
 // ============ ADMIN ============
+// ============ ADMIN ============
 document.getElementById('admin-btn').onclick = async () => {
     adminPanel.style.display = 'flex';
+    switchAdminTab('users');
+    loadAdminStats();
+    loadAdminUsers();
+};
 
+async function loadAdminStats() {
     const statsRes = await fetch(`${API_URL}/admin/stats`, { headers: { 'Authorization': `Bearer ${token}` } });
     const stats = await statsRes.json();
     document.getElementById('admin-stats').innerHTML = `
@@ -1014,7 +1020,9 @@ document.getElementById('admin-btn').onclick = async () => {
         <div class="stat-card"><h3>${stats.messages}</h3><p>Messages</p></div>
         <div class="stat-card"><h3>${stats.online || 0}</h3><p>Online Now</p></div>
     `;
+}
 
+async function loadAdminUsers() {
     const usersRes = await fetch(`${API_URL}/admin/users`, { headers: { 'Authorization': `Bearer ${token}` } });
     const users = await usersRes.json();
     document.querySelector('#users-table tbody').innerHTML = users.map(u => `
@@ -1025,27 +1033,109 @@ document.getElementById('admin-btn').onclick = async () => {
             <td>${u.mfa_enabled ? '🔒' : '—'}</td>
             <td>${u.is_online ? '🟢' : '⚫'}</td>
             <td>
-                ${u.role !== 'admin' ? (u.role === 'banned' 
-                    ? `<button class="btn-small" onclick="adminAction('unban', ${u.id})">Unban</button>` 
-                    : `<button class="btn-small" style="background:var(--danger)" onclick="adminAction('ban', ${u.id})">Ban</button>`) 
-                : ''}
+                <div style="display:flex; gap:5px;">
+                    ${u.role !== 'admin' ? (u.role === 'banned' 
+                        ? `<button class="btn-xs" onclick="adminAction('unban', ${u.id})">Unban</button>` 
+                        : `<button class="btn-xs" style="background:var(--danger)" onclick="adminAction('ban', ${u.id})">Ban</button>`) 
+                    : ''}
+                    ${u.role !== 'admin' ? `<button class="btn-xs" style="background:var(--accent)" onclick="adminAction('promote', ${u.id})">Admin</button>` : ''}
+                    ${u.mfa_enabled ? `<button class="btn-xs" title="Force Disable MFA" onclick="adminAction('mfa/disable', ${u.id})">🔓 MFA</button>` : ''}
+                </div>
             </td>
         </tr>
     `).join('');
+}
+
+async function loadAdminGroups() {
+    const res = await fetch(`${API_URL}/admin/groups`, { headers: { 'Authorization': `Bearer ${token}` } });
+    const groups = await res.json();
+    document.querySelector('#admin-groups-table tbody').innerHTML = groups.map(g => `
+        <tr>
+            <td>${g.id}</td>
+            <td>${g.name}</td>
+            <td>${g.creator}</td>
+            <td>${g.member_count}</td>
+            <td>
+                <button class="btn-xs btn-danger" onclick="adminDeleteGroup(${g.id})">Delete</button>
+            </td>
+        </tr>
+    `).join('');
+}
+
+window.switchAdminTab = (tabId) => {
+    document.querySelectorAll('.admin-tab-content').forEach(el => el.style.display = 'none');
+    document.querySelectorAll('#admin-panel .tabs button').forEach(el => el.classList.remove('active'));
+    
+    document.getElementById(`admin-content-${tabId}`).style.display = 'block';
+    document.getElementById(`admin-tab-${tabId}`).classList.add('active');
+
+    if (tabId === 'users') loadAdminUsers();
+    if (tabId === 'groups') loadAdminGroups();
 };
 
 window.adminAction = async (action, userId) => {
-    await fetch(`${API_URL}/admin/${action}`, {
+    const res = await fetch(`${API_URL}/admin/${action}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
         body: JSON.stringify({ userId })
     });
-    showToast('Admin', `User ${action}ned successfully`);
-    document.getElementById('admin-btn').click(); // Refresh
+    if (res.ok) {
+        showToast('Admin', 'Action completed');
+        loadAdminUsers();
+        loadAdminStats();
+    }
 };
 
+window.adminDeleteGroup = async (groupId) => {
+    if (!confirm('Are you sure you want to delete this group? This cannot be undone.')) return;
+    const res = await fetch(`${API_URL}/admin/group/${groupId}`, {
+        method: 'DELETE',
+        headers: { 'Authorization': `Bearer ${token}` }
+    });
+    if (res.ok) {
+        showToast('Admin', 'Group deleted');
+        loadAdminGroups();
+        loadAdminStats();
+    }
+};
+
+let monitorInterval = null;
+window.startMonitoring = async () => {
+    const u1 = document.getElementById('monitor-user-1').value;
+    const u2 = document.getElementById('monitor-user-2').value;
+    if (!u1 || !u2) return showToast('Error', 'Enter both User IDs');
+
+    if (monitorInterval) clearInterval(monitorInterval);
+    
+    const fetchLoop = async () => {
+        const res = await fetch(`${API_URL}/messages?userId=${u1}&adminTargetId=${u2}`, {
+            headers: { 'Authorization': `Bearer ${token}` }
+        });
+        const messages = await res.json();
+        const container = document.getElementById('monitor-messages');
+        
+        if (messages.length === 0) {
+            container.innerHTML = '<p style="text-align:center; color:var(--text-muted);">No messages found between these users</p>';
+        } else {
+            container.innerHTML = messages.map(m => `
+                <div style="margin-bottom:10px; padding:10px; border-radius:8px; background:var(--bg-tertiary);">
+                    <div style="font-weight:bold; font-size:0.8rem; color:var(--accent);">${m.sender}</div>
+                    <div style="font-size:0.9rem;">${escapeHtml(m.content)}</div>
+                    <div style="text-align:right; font-size:0.7rem; color:var(--text-muted);">${new Date(m.timestamp).toLocaleTimeString()}</div>
+                </div>
+            `).join('');
+            container.scrollTop = container.scrollHeight;
+        }
+    };
+
+    fetchLoop();
+    monitorInterval = setInterval(fetchLoop, 5000);
+};
+
+// Clear monitor on close
 document.getElementById('close-admin').onclick = () => {
     adminPanel.style.display = 'none';
+    if (monitorInterval) clearInterval(monitorInterval);
 };
 
 // ============ THEME TOGGLE ============

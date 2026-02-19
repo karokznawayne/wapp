@@ -44,12 +44,16 @@ router.get('/search', authenticateToken, async (req, res) => {
     const { q } = req.query;
     if (!q) return res.json([]);
     try {
+        // If caller is NOT admin, hide all admins
+        const roleFilter = req.user.role !== 'admin' ? "AND role != 'admin'" : "";
+        
         const result = await db.query(`
-            SELECT id, username, avatar_color FROM users 
+            SELECT id, username, avatar_color, role FROM users 
             WHERE username ILIKE $1 AND id != $2 
+            ${roleFilter}
             AND id NOT IN (SELECT blocked_id FROM blocked_users WHERE blocker_id = $2)
             AND id NOT IN (SELECT blocker_id FROM blocked_users WHERE blocked_id = $2)
-            LIMIT 10
+            LIMIT 20
         `, [`%${q}%`, req.user.id]);
         res.json(result.rows);
     } catch (err) {

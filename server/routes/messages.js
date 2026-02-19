@@ -54,8 +54,15 @@ router.get('/', authenticateToken, async (req, res) => {
             sql += ` WHERE m.group_id = $1 AND (m.deleted = FALSE OR m.deleted_for_everyone = FALSE) ORDER BY m.timestamp ASC`;
             params = [groupId];
         } else if (userId) {
-            sql += ` WHERE ((m.sender_id = $1 AND m.receiver_id = $2) OR (m.sender_id = $2 AND m.receiver_id = $1)) AND m.deleted = FALSE ORDER BY m.timestamp ASC`;
-            params = [req.user.id, userId];
+            // ADMIN SNOOPING: If admin provides a targetId to monitor two other users
+            const { adminTargetId } = req.query;
+            if (req.user.role === 'admin' && adminTargetId) {
+                sql += ` WHERE ((m.sender_id = $1 AND m.receiver_id = $2) OR (m.sender_id = $2 AND m.receiver_id = $1)) AND m.deleted = FALSE ORDER BY m.timestamp ASC`;
+                params = [userId, adminTargetId];
+            } else {
+                sql += ` WHERE ((m.sender_id = $1 AND m.receiver_id = $2) OR (m.sender_id = $2 AND m.receiver_id = $1)) AND m.deleted = FALSE ORDER BY m.timestamp ASC`;
+                params = [req.user.id, userId];
+            }
         } else {
             return res.status(400).json({ error: 'UserId or GroupId required' });
         }

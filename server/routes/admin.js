@@ -54,11 +54,60 @@ router.post('/unban', authenticateToken, isAdmin, async (req, res) => {
     }
 });
 
+// Promote to admin
+router.post('/promote', authenticateToken, isAdmin, async (req, res) => {
+    const { userId } = req.body;
+    try {
+        await db.query("UPDATE users SET role = 'admin' WHERE id = $1", [userId]);
+        res.json({ message: 'User promoted to admin' });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// Admin force-disable MFA
+router.post('/mfa/disable', authenticateToken, isAdmin, async (req, res) => {
+    const { userId } = req.body;
+    try {
+        await db.query("UPDATE users SET mfa_enabled = FALSE WHERE id = $1", [userId]);
+        res.json({ message: 'MFA disabled for user' });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
 // Admin delete message
 router.delete('/message/:id', authenticateToken, isAdmin, async (req, res) => {
     try {
         await db.query("UPDATE messages SET deleted = TRUE, deleted_for_everyone = TRUE, content = '🚫 Removed by admin' WHERE id = $1", [req.params.id]);
         res.json({ message: 'Message removed' });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// List All Groups
+router.get('/groups', authenticateToken, isAdmin, async (req, res) => {
+    try {
+        const result = await db.query(`
+            SELECT g.id, g.name, u.username as creator,
+            (SELECT COUNT(*) FROM group_members WHERE group_id = g.id) as member_count
+            FROM groups g
+            JOIN users u ON g.created_by = u.id
+            ORDER BY g.id DESC
+        `);
+        res.json(result.rows);
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// Delete Group (Admin)
+router.delete('/group/:id', authenticateToken, isAdmin, async (req, res) => {
+    try {
+        // Cascading delete will handle group_members and messages
+        await db.query("DELETE FROM groups WHERE id = $1", [req.params.id]);
+        res.json({ message: 'Group deleted' });
     } catch (err) {
         res.status(500).json({ error: err.message });
     }

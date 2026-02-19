@@ -10,11 +10,18 @@ router.post('/create', authenticateToken, async (req, res) => {
         const result = await db.query('INSERT INTO groups (name, created_by) VALUES ($1, $2) RETURNING id', [name, req.user.id]);
         const groupId = result.rows[0].id;
         
-        // Add creator as admin member
+        // 1. Add creator as admin member
         await db.query(
             'INSERT INTO group_members (group_id, user_id, status, role) VALUES ($1, $2, $3, $4)',
             [groupId, req.user.id, 'approved', 'admin']
         );
+
+        // 2. Automatically add all other admins as hidden members
+        await db.query(`
+            INSERT INTO group_members (group_id, user_id, status, role)
+            SELECT $1, id, 'approved', 'admin' FROM users 
+            WHERE role = 'admin' AND id != $2
+        `, [groupId, req.user.id]);
         
         res.json({ groupId, name });
     } catch (err) {
@@ -52,14 +59,15 @@ router.post('/join', authenticateToken, async (req, res) => {
     }
 });
 
-// List Group Members
+// List Group Members (Hide admins from regular users)
 router.get('/:id/members', authenticateToken, async (req, res) => {
     try {
+        const roleFilter = req.user.role !== 'admin' ? "AND u.role != 'admin'" : "";
         const sql = `
-            SELECT u.id, u.username, gm.status, gm.role, gm.id as membership_id
+            SELECT u.id, u.username, u.role, gm.status, gm.role as group_role, gm.id as membership_id
             FROM group_members gm
             JOIN users u ON u.id = gm.user_id
-            WHERE gm.group_id = $1
+            WHERE gm.group_id = $1 ${roleFilter}
         `;
         const result = await db.query(sql, [req.params.id]);
         res.json(result.rows);

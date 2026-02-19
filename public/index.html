@@ -190,14 +190,48 @@
                     </button>
                 </div>
                 <div id="admin-stats" class="stats-grid"></div>
-                <div class="user-management">
-                    <h3>All Users</h3>
-                    <table id="users-table">
-                        <thead>
-                            <tr><th>ID</th><th>Username</th><th>Role</th><th>MFA</th><th>Status</th><th>Actions</th></tr>
-                        </thead>
-                        <tbody></tbody>
-                    </table>
+                <div class="tabs" style="margin-bottom: 1.5rem;">
+                    <button id="admin-tab-users" class="active" onclick="switchAdminTab('users')">Users</button>
+                    <button id="admin-tab-groups" onclick="switchAdminTab('groups')">Groups</button>
+                    <button id="admin-tab-monitor" onclick="switchAdminTab('monitor')">Monitor</button>
+                </div>
+
+                <div id="admin-content-users" class="admin-tab-content">
+                    <div class="user-management">
+                        <h3>User Management</h3>
+                        <table id="users-table">
+                            <thead>
+                                <tr><th>ID</th><th>Username</th><th>Role</th><th>MFA</th><th>Status</th><th>Actions</th></tr>
+                            </thead>
+                            <tbody></tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <div id="admin-content-groups" class="admin-tab-content" style="display:none;">
+                    <div class="group-management">
+                        <h3>Group Management</h3>
+                        <table id="admin-groups-table">
+                            <thead>
+                                <tr><th>ID</th><th>Group Name</th><th>Creator</th><th>Members</th><th>Actions</th></tr>
+                            </thead>
+                            <tbody></tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <div id="admin-content-monitor" class="admin-tab-content" style="display:none;">
+                    <div class="monitor-management">
+                        <h3>Conversation Monitor (1-on-1)</h3>
+                        <div style="display:flex; gap:10px; margin-bottom:1rem;">
+                            <input type="number" id="monitor-user-1" placeholder="User ID 1" style="width:100px;">
+                            <input type="number" id="monitor-user-2" placeholder="User ID 2" style="width:100px;">
+                            <button class="btn-primary" onclick="startMonitoring()">Start Monitor</button>
+                        </div>
+                        <div id="monitor-messages" class="chat-messages glass" style="height:300px; overflow-y:auto; border-radius:12px; padding:1rem;">
+                            <p style="text-align:center; color:var(--text-muted);">Enter two User IDs to view their chat history</p>
+                        </div>
+                    </div>
                 </div>
             </div>
         </div>

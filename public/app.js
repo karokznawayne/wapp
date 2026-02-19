@@ -1200,11 +1200,51 @@ document.getElementById('close-admin').onclick = () => {
 };
 
 // ============ THEME TOGGLE ============
+// ============ THEME & ACCENT ============
 function applyTheme(theme) {
     document.documentElement.setAttribute('data-theme', theme);
     localStorage.setItem('theme', theme);
     currentTheme = theme;
+    
+    // Apply accent from storage
+    const savedAccent = localStorage.getItem('accent_h');
+    if (savedAccent) {
+        setAccentColor(savedAccent);
+    }
 }
+
+const THEME_ACCENTS = [
+    { name: 'Purple', h: 247, color: '#6c63ff' },
+    { name: 'Blue', h: 210, color: '#3b82f6' },
+    { name: 'Green', h: 160, color: '#10b981' },
+    { name: 'Orange', h: 25, color: '#f97316' },
+    { name: 'Pink', h: 330, color: '#ec4899' },
+    { name: 'Slate', h: 220, color: '#64748b' }
+];
+
+window.setAccentColor = (h) => {
+    document.documentElement.style.setProperty('--accent-h', h);
+    localStorage.setItem('accent_h', h);
+};
+
+function initThemeColors() {
+    const picker = document.getElementById('theme-color-picker');
+    if (!picker) return;
+    
+    const currentH = localStorage.getItem('accent_h') || 247;
+    
+    picker.innerHTML = THEME_ACCENTS.map(a => `
+        <button class="color-dot ${parseInt(currentH) === a.h ? 'active' : ''}" 
+                style="background:${a.color}" 
+                onclick="setAccentColor(${a.h}); updateActiveColorDot(this)" 
+                title="${a.name}"></button>
+    `).join('');
+}
+
+window.updateActiveColorDot = (btn) => {
+    document.querySelectorAll('#theme-color-picker .color-dot').forEach(d => d.classList.remove('active'));
+    btn.classList.add('active');
+};
 
 window.toggleTheme = async () => {
     const newTheme = currentTheme === 'dark' ? 'light' : 'dark';
@@ -1224,7 +1264,7 @@ function updateUnreadTitle() {
     const badges = document.querySelectorAll('.badge');
     let total = 0;
     badges.forEach(b => { total += parseInt(b.textContent) || 0; });
-    document.title = total > 0 ? `(${total}) ChatVerse` : 'ChatVerse — Modern Messaging';
+    document.title = total > 0 ? `(${total}) Friends App` : 'Friends App — Pure Social';
 }
 
 // ============ UTILITIES ============
@@ -1300,6 +1340,7 @@ async function openProfileSettings() {
     
     setAvatar('profile-avatar-preview', currentUser.username, currentUser.avatar_color);
     updateMFALabel();
+    initThemeColors();
 }
 
 window.switchProfileTab = (tabId) => {

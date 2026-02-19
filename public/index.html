@@ -3,8 +3,8 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>ChatVerse — Modern Messaging</title>
-    <meta name="description" content="ChatVerse - A premium social messaging app with groups, friends, and real-time communication.">
+    <title>Friends App — Pure Social</title>
+    <meta name="description" content="Friends App - A minimalistic and beautiful space for friends and groups.">
     <link rel="stylesheet" href="style.css">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -17,9 +17,9 @@
         <div id="auth-container">
             <div class="auth-card glass">
                 <div class="auth-logo">
-                    <div class="logo-icon">💬</div>
-                    <h1>ChatVerse</h1>
-                    <p class="auth-subtitle">Connect. Chat. Collaborate.</p>
+                    <div class="logo-icon">🖇️</div>
+                    <h1>Friends App</h1>
+                    <p class="auth-subtitle">Minimal. Clean. For Friends.</p>
                 </div>
                 <div class="tabs">
                     <button id="tab-login" class="active">Sign In</button>
@@ -88,6 +88,10 @@
         <!-- Dashboard Section -->
         <div id="dashboard-container" style="display:none;">
             <div class="sidebar">
+                <div class="sidebar-branding" style="padding: 1.25rem 1.25rem 0.5rem 1.25rem; display: flex; align-items: center; gap: 8px;">
+                    <div style="font-size: 1.25rem;">🖇️</div>
+                    <h2 style="font-size: 1.1rem; font-weight: 800; letter-spacing: -0.02em; color: var(--accent);">Friends App</h2>
+                </div>
                 <div class="sidebar-header">
                     <div class="user-profile">
                         <div class="avatar" id="my-avatar">U</div>
@@ -101,7 +105,7 @@
                         <button onclick="toggleTheme()" class="icon-btn" title="Toggle Theme">
                             <span class="material-symbols-rounded">contrast</span>
                         </button>
-                        <button id="games-hub-btn" class="icon-btn" title="Gaming Hub" onclick="openGameHub()">
+                        <button id="games-hub-btn" class="icon-btn" title="Fun Zone" onclick="openGameHub()">
                             <span class="material-symbols-rounded">sports_esports</span>
                         </button>
                         <button id="admin-btn" class="icon-btn" style="display:none;" title="Admin Panel">
@@ -410,13 +414,20 @@
 
                     <hr style="border: 0; border-top: 1px solid var(--border); margin: 1.5rem 0;">
 
-                    <h4>Theme</h4>
+                    <h4>Theme & Style</h4>
                     <div class="setting-row">
                         <span>Dark Mode</span>
                         <label class="switch">
                             <input type="checkbox" id="setting-dark-mode" checked onchange="toggleTheme()">
                             <span class="slider round"></span>
                         </label>
+                    </div>
+
+                    <div class="input-group" style="margin-top: 1.5rem;">
+                        <label style="font-size: 0.85rem; color: var(--text-secondary); margin-bottom: 0.5rem; display: block;">Accent Color</label>
+                        <div class="color-picker" id="theme-color-picker">
+                            <!-- Accent colors will be injected here -->
+                        </div>
                     </div>
                 </div>
 

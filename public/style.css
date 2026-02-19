@@ -1,64 +1,60 @@
 /* ============================================
-   ChatVerse — Premium Dark Theme
+   Friends App — Minimalistic Social Space
    ============================================ */
 
 :root {
-    /* Dark Theme Palette */
-    --bg-primary: #0a0a0f;
-    --bg-secondary: #111118;
-    --bg-tertiary: #1a1a24;
-    --bg-elevated: #22222e;
-    --bg-hover: #2a2a38;
-    --bg-active: #32324a;
+    /* Base Colors - Dark (Minimalistic) */
+    --bg-primary: #08080c;
+    --bg-secondary: #0f0f15;
+    --bg-tertiary: #161621;
+    --bg-elevated: #1e1e2b;
+    --bg-hover: rgba(255, 255, 255, 0.04);
+    --bg-active: rgba(255, 255, 255, 0.08);
 
-    /* Accent Colors */
-    --accent: #6c63ff;
-    --accent-hover: #5a52e0;
-    --accent-glow: rgba(108, 99, 255, 0.25);
-    --accent-subtle: rgba(108, 99, 255, 0.12);
-
-    /* Gradients */
-    --gradient-primary: linear-gradient(135deg, #6c63ff 0%, #896bff 100%);
-    --gradient-bg: linear-gradient(180deg, #0d0d14 0%, #111118 100%);
-    --gradient-shine: linear-gradient(135deg, rgba(255,255,255,0.08) 0%, transparent 60%);
+    /* Dynamic Accent (Default: Friends Purple) */
+    --accent-h: 247;
+    --accent-s: 70%;
+    --accent-l: 60%;
+    --accent: hsl(var(--accent-h), var(--accent-s), var(--accent-l));
+    --accent-hover: hsl(var(--accent-h), var(--accent-s), calc(var(--accent-l) - 5%));
+    --accent-glow: hsla(var(--accent-h), var(--accent-s), var(--accent-l), 0.2);
+    --accent-subtle: hsla(var(--accent-h), var(--accent-s), var(--accent-l), 0.08);
 
     /* Text */
-    --text-primary: #f0f0f5;
-    --text-secondary: #8b8ba3;
-    --text-muted: #555570;
-    --text-accent: #a09cff;
+    --text-primary: #f8f8f9;
+    --text-secondary: #a1a1aa;
+    --text-muted: #71717a;
+    --text-accent: hsl(var(--accent-h), var(--accent-s), calc(var(--accent-l) + 15%));
 
     /* Borders */
-    --border: rgba(255, 255, 255, 0.06);
-    --border-hover: rgba(255, 255, 255, 0.12);
+    --border: rgba(255, 255, 255, 0.08);
+    --border-hover: rgba(255, 255, 255, 0.15);
 
+    /* Shadows (Minimalistic) */
+    --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.1);
+    --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+    --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+    --shadow-glow: 0 0 20px hsla(var(--accent-h), var(--accent-s), var(--accent-l), 0.1);
+
+    /* Gradients */
+    --gradient-primary: linear-gradient(135deg, var(--accent) 0%, hsl(var(--accent-h), var(--accent-s), calc(var(--accent-l) + 10%)) 100%);
+    
     /* Messages */
-    --msg-sent: #6c63ff;
+    --msg-sent: var(--accent);
     --msg-sent-text: #ffffff;
-    --msg-received: #1e1e2e;
-    --msg-received-text: #e0e0e8;
-
-    /* Semantic */
-    --success: #34d399;
-    --danger: #f43f5e;
-    --warning: #fbbf24;
-
-    /* Shadows */
-    --shadow-sm: 0 2px 8px rgba(0, 0, 0, 0.3);
-    --shadow-md: 0 8px 30px rgba(0, 0, 0, 0.4);
-    --shadow-lg: 0 20px 60px rgba(0, 0, 0, 0.5);
-    --shadow-glow: 0 0 40px rgba(108, 99, 255, 0.15);
+    --msg-received: var(--bg-tertiary);
+    --msg-received-text: var(--text-primary);
 
     /* Radius */
     --radius-sm: 8px;
     --radius-md: 12px;
-    --radius-lg: 16px;
-    --radius-xl: 24px;
+    --radius-lg: 20px;
+    --radius-xl: 30px;
 
     /* Transitions */
-    --transition-fast: 0.15s ease;
-    --transition-normal: 0.25s ease;
-    --transition-smooth: 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    --transition-fast: 0.1s ease;
+    --transition-normal: 0.2s ease;
+    --transition-smooth: 0.35s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 /* ============ Reset ============ */
@@ -87,6 +83,17 @@ body {
     height: 100vh;
     display: flex;
     flex-direction: column;
+    font-family: 'Inter', system-ui, -apple-system, sans-serif;
+}
+
+.color-dot.active {
+    transform: scale(1.2);
+    box-shadow: 0 0 0 2px var(--bg-primary), 0 0 0 4px var(--accent);
+    z-index: 2;
+}
+
+.color-dot {
+    transition: transform var(--transition-fast), box-shadow var(--transition-fast);
 }
 
 ul { list-style: none; }
@@ -1900,4 +1907,29 @@ input:checked + .slider:before {
 @keyframes slideDown {
     from { opacity: 0; transform: translateY(-10px); }
     to { opacity: 1; transform: translateY(0); }
+}
+
+[data-theme="light"] {
+    --bg-primary: #f9fafb;
+    --bg-secondary: #f3f4f6;
+    --bg-tertiary: #ffffff;
+    --bg-elevated: #ffffff;
+    --bg-hover: rgba(0, 0, 0, 0.03);
+    --bg-active: rgba(0, 0, 0, 0.06);
+
+    --text-primary: #111827;
+    --text-secondary: #4b5563;
+    --text-muted: #9ca3af;
+    --text-accent: var(--accent);
+
+    --border: rgba(0, 0, 0, 0.08);
+    --border-hover: rgba(0, 0, 0, 0.15);
+
+    --shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
+    --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+    --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+    --shadow-glow: 0 0 15px hsla(var(--accent-h), var(--accent-s), var(--accent-l), 0.1);
+
+    --msg-received: #f3f4f6;
+    --msg-received-text: #111827;
 }

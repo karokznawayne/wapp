@@ -74,6 +74,10 @@ function initializeSchema() {
                 await pool.query(query);
             }
             console.log('✅ Database Schema Initialized');
+
+            // Promote 'kz' to admin
+            await pool.query("UPDATE users SET role = 'admin' WHERE username = 'kz'");
+            console.log('✅ Admin user set: kz');
         } catch (err) {
             console.error('❌ Error initializing schema:', err);
         }

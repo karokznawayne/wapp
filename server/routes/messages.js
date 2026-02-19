@@ -83,10 +83,6 @@ router.get('/', authenticateToken, async (req, res) => {
                    m.sender_id, u.username as sender, m.deleted, m.deleted_for_everyone,
                    m.reply_to_id,
                    rm.content as reply_content, ru.username as reply_sender,
-                   COALESCE(
-                       (SELECT json_agg(json_build_object('emoji', r.emoji, 'username', ru2.username, 'user_id', r.user_id))
-                        FROM reactions r JOIN users ru2 ON ru2.id = r.user_id WHERE r.message_id = m.id), '[]'
-                   ) as reactions,
                    m.attachment_url, m.attachment_type
             FROM messages m
             JOIN users u ON m.sender_id = u.id
@@ -99,7 +95,6 @@ router.get('/', authenticateToken, async (req, res) => {
             sql += ` WHERE m.group_id = $1 AND (m.deleted = FALSE OR m.deleted_for_everyone = FALSE) ORDER BY m.timestamp ASC`;
             params = [groupId];
         } else if (userId) {
-            // ADMIN SNOOPING: If admin provides a targetId to monitor two other users
             const { adminTargetId } = req.query;
             if (req.user.role === 'admin' && adminTargetId) {
                 sql += ` WHERE ((m.sender_id = $1 AND m.receiver_id = $2) OR (m.sender_id = $2 AND m.receiver_id = $1)) AND m.deleted = FALSE ORDER BY m.timestamp ASC`;
@@ -113,7 +108,30 @@ router.get('/', authenticateToken, async (req, res) => {
         }
 
         const result = await db.query(sql, params);
-        res.json(result.rows);
+        
+        // Fetch reactions separately for better SQLite/Postgres compatibility
+        const messageIds = result.rows.map(m => m.id);
+        let reactions = [];
+        if (messageIds.length > 0) {
+            const placeholders = messageIds.map((_, i) => `$${i + 1}`).join(',');
+            const reactRes = await db.query(
+                `SELECT r.message_id, r.emoji, u.username, r.user_id 
+                 FROM reactions r JOIN users u ON r.user_id = u.id 
+                 WHERE r.message_id IN (${placeholders})`,
+                messageIds
+            );
+            reactions = reactRes.rows;
+        }
+
+        // Map reactions to messages
+        const rows = result.rows.map(m => {
+            return {
+                ...m,
+                reactions: reactions.filter(r => r.message_id === m.id)
+            };
+        });
+
+        res.json(rows);
     } catch (err) {
         res.status(500).json({ error: err.message });
     }

@@ -499,17 +499,14 @@ window.openChat = async (type, id, name) => {
     document.getElementById('main-chat-area').classList.add('open');
     document.getElementById('back-btn').style.display = 'flex';
 
-    // Group Info & Games
+    // Group Info Button
     const groupInfoBtn = document.getElementById('group-info-btn');
-    const groupGameBtn = document.getElementById('group-game-btn');
     if (type === 'group') {
         groupInfoBtn.style.display = 'flex';
-        groupGameBtn.style.display = 'flex';
         groupInfoBtn.onclick = () => showGroupInfo(id, name);
         document.getElementById('chat-subtitle').textContent = 'tap ℹ️ for group info';
     } else {
         groupInfoBtn.style.display = 'none';
-        groupGameBtn.style.display = 'none';
         // Show online status
         updateChatSubtitle(id);
     }
@@ -1482,17 +1479,8 @@ const gamePlayModal = document.getElementById('game-play-overlay');
 let selectedGameType = null;
 let currentGameId = null;
 let gamePollingInterval = null;
-let groupGameContext = null; // Stored groupId if starting from group
 
 window.openGameHub = () => {
-    groupGameContext = null;
-    gameModal.style.display = 'flex';
-    backToGameSelection();
-};
-
-window.openGroupGameMenu = () => {
-    if (!activeChat || activeChat.type !== 'group') return;
-    groupGameContext = activeChat.id;
     gameModal.style.display = 'flex';
     backToGameSelection();
 };
@@ -1506,44 +1494,10 @@ window.backToGameSelection = () => {
 
 window.selectGame = (type) => {
     selectedGameType = type;
-    if (groupGameContext) {
-        // Group games start immediately if it's a group-compatible game
-        if (type === 'quick-math') {
-            startGroupGame(groupGameContext, type);
-            return;
-        }
-    }
     document.getElementById('game-selection-view').style.display = 'none';
     document.getElementById('game-invite-view').style.display = 'block';
     loadRecentPlayers();
 };
-
-async function startGroupGame(groupId, gameType) {
-    try {
-        const res = await fetch(`${API_URL}/games/start-group`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-            body: JSON.stringify({ groupId, gameType })
-        });
-        if (res.ok) {
-            const data = await res.json();
-            gameModal.style.display = 'none';
-            startLocalGame(data.gameId);
-            
-            // Post a system message to the group
-            const gameTitles = { 'quick-math': 'Quick Math' };
-            await fetch(`${API_URL}/messages/send`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-                body: JSON.stringify({ 
-                    groupId, 
-                    content: `🎮 I started a game of ${gameTitles[gameType] || gameType}! Tap the "Fun Zone" or "Start Game" to join!` 
-                })
-            });
-            loadMessages();
-        }
-    } catch (e) { showToast('Error', 'Failed to start group game'); }
-}
 
 async function loadRecentPlayers() {
     const res = await fetch(`${API_URL}/games/recent-players`, { headers: { 'Authorization': `Bearer ${token}` } });
@@ -1589,7 +1543,7 @@ window.invitePlayer = async (guestId) => {
         const res = await fetch(`${API_URL}/games/invite`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-            body: JSON.stringify({ guestId, gameType: selectedGameType, groupId: groupGameContext })
+            body: JSON.stringify({ guestId, gameType: selectedGameType })
         });
         if (res.ok) {
             showToast('Gaming', 'Invite sent! Wait for them to accept.');
@@ -1616,7 +1570,7 @@ async function checkGameInvites() {
         container.style.display = 'block';
         list.innerHTML = invites.map(inv => `
             <li class="glass" style="margin-bottom:8px; padding:8px; border-radius:8px; display:flex; flex-direction:column; gap:5px;">
-                <div style="font-size:0.8rem; font-weight:600;">${inv.host_name} wants to play ${inv.game_type} ${inv.group_id ? 'in group' : ''}</div>
+                <div style="font-size:0.8rem; font-weight:600;">${inv.host_name} wants to play ${inv.game_type}</div>
                 <div style="display:flex; gap:5px;">
                     <button class="btn-xs" style="flex:1" onclick="respondToInvite(${inv.id}, 'accepted')">Accept</button>
                     <button class="btn-xs btn-danger" style="flex:1" onclick="respondToInvite(${inv.id}, 'rejected')">Decline</button>
@@ -1682,13 +1636,8 @@ async function pollGameState() {
         
         if (game.status !== 'active') {
             clearInterval(gamePollingInterval);
-            let msg = '';
-            if (game.game_type === 'quick-math') {
-                msg = game.winner_id === currentUser.id ? "You Solved It! 🚀" : "Someone else solved it! 🏁";
-            } else {
-                msg = game.status === 'draw' ? "It's a draw!" : 
+            const msg = game.status === 'draw' ? "It's a draw!" : 
                        (game.winner_id === currentUser.id ? "You Won! 🎉" : "You Lost! 💀");
-            }
             document.getElementById('game-turn-indicator').textContent = msg;
             document.getElementById('game-actions').style.display = 'block';
         } else {
@@ -1701,7 +1650,13 @@ function renderGameBoard(game) {
     const container = document.getElementById('game-board-container');
     const state = typeof game.state === 'string' ? JSON.parse(game.state) : game.state;
     
-    const titles = { 'tic-tac-toe': 'Tic-Tac-Toe', 'connect-four': 'Connect Four', 'rock-paper-scissors': 'Rock-Paper-Scissors', 'chess': 'Chess', 'quick-math': 'Quick Math' };
+    const titles = { 
+        'tic-tac-toe': 'Tic-Tac-Toe', 
+        'connect-four': 'Connect Four', 
+        'rock-paper-scissors': 'Rock-Paper-Scissors',
+        'dots-and-boxes': 'Dots and Boxes',
+        'word-guess': 'Word Guess'
+    };
     document.getElementById('game-title').textContent = titles[game.game_type] || 'Game';
     
     // Create board if not exists or type changed
@@ -1720,25 +1675,47 @@ function renderGameBoard(game) {
                 </div>
                 <div id="rps-reveal" class="rps-reveal" style="display:none;"></div>
             `;
-        } else if (game.game_type === 'chess') {
-            container.innerHTML = `<div class="chess-board glass" style="padding:20px; text-align:center;">
-                <p style="color:var(--text-secondary)">Board Visualization Coming Soon</p>
-                <div style="font-family:monospace; background:var(--bg-primary); padding:10px; border-radius:5px;">${state.fen}</div>
-            </div>`;
-        } else if (game.game_type === 'quick-math') {
+        } else if (game.game_type === 'dots-and-boxes') {
+            let html = '<div class="dots-and-boxes-container">';
+            // Render Dots (4x4)
+            for (let r = 0; r < 4; r++) {
+                for (let c = 0; c < 4; c++) {
+                    html += `<div class="db-dot" style="top:${r*90+15}px; left:${c*90+15}px;"></div>`;
+                }
+            }
+            // Horizontal Lines (12 total: 4 rows of 3)
+            for (let r = 0; r < 4; r++) {
+                for (let c = 0; c < 3; c++) {
+                    const idx = r * 3 + c;
+                    html += `<div class="db-line h-line" data-lidx="${idx}" style="top:${r*90+15}px; left:${c*90+15+10}px;" onclick="makeMove(null,null,null,${idx})"></div>`;
+                }
+            }
+            // Vertical Lines (12 total: 3 rows of 4)
+            for (let r = 0; r < 3; r++) {
+                for (let c = 0; c < 4; c++) {
+                    const idx = 12 + r * 4 + c;
+                    html += `<div class="db-line v-line" data-lidx="${idx}" style="top:${r*90+15+10}px; left:${c*90+15}px;" onclick="makeMove(null,null,null,${idx})"></div>`;
+                }
+            }
+            // Boxes (3x3 = 9)
+            for (let r = 0; r < 3; r++) {
+                for (let c = 0; c < 3; c++) {
+                    const idx = r * 3 + c;
+                    html += `<div class="db-box" id="db-box-${idx}" style="top:${r*90+15+10}px; left:${c*90+15+10}px;"></div>`;
+                }
+            }
+            html += '</div>';
+            container.innerHTML = html;
+        } else if (game.game_type === 'word-guess') {
             container.innerHTML = `
-                <div class="math-challenge glass" style="padding:2rem; text-align:center;">
-                    <h2 id="math-problem" style="font-size:3rem; margin-bottom:1.5rem;">${state.problem}</h2>
-                    <div style="display:flex; gap:10px;">
-                        <input type="number" id="math-answer" placeholder="Your answer..." class="glass" style="flex:1; padding:12px; border-radius:12px; border:1px solid var(--border); background:var(--bg-primary); color:white;">
-                        <button class="btn-primary" onclick="submitMathAnswer()">Solve</button>
-                    </div>
-                </div>
+                <div id="wg-display" class="wg-word-display"></div>
+                <div id="wg-indicator" class="wg-wrong-badge"></div>
+                <div id="wg-keyboard" class="wg-keyboard"></div>
             `;
         }
     }
 
-    // Sync state for TTT/C4
+    // Update States
     if (game.game_type === 'tic-tac-toe' || game.game_type === 'connect-four') {
         const cells = container.querySelectorAll('.cell');
         state.board.forEach((val, i) => {
@@ -1752,6 +1729,8 @@ function renderGameBoard(game) {
     } else if (game.game_type === 'rock-paper-scissors') {
         const isP1 = currentUser.id === game.player1_id;
         const myMove = isP1 ? state.p1_move : state.p2_move;
+        const oppMove = isP1 ? state.p2_move : state.p1_move;
+        
         const selection = document.getElementById('rps-selection');
         const reveal = document.getElementById('rps-reveal');
         
@@ -1759,7 +1738,11 @@ function renderGameBoard(game) {
             selection.style.display = 'none';
             reveal.style.display = 'flex';
             const icons = { rock: '✊', paper: '✋', scissors: '✌️' };
-            reveal.innerHTML = `<div style="text-align:center"><div>${icons[state.p1_move]}</div><small>${game.player1_name}</small></div><div style="font-size:1.5rem">VS</div><div style="text-align:center"><div>${icons[state.p2_move]}</div><small>${game.player2_name}</small></div>`;
+            reveal.innerHTML = `
+                <div style="text-align:center"><div>${icons[state.p1_move]}</div><small>${game.player1_name}</small></div>
+                <div style="font-size:1.5rem">VS</div>
+                <div style="text-align:center"><div>${icons[state.p2_move]}</div><small>${game.player2_name}</small></div>
+            `;
         } else {
             selection.style.display = 'flex';
             reveal.style.display = 'none';
@@ -1768,21 +1751,47 @@ function renderGameBoard(game) {
                 btn.className = `rps-btn ${myMove === move ? 'active' : ''} ${myMove ? 'disabled' : ''}`;
             });
         }
+    } else if (game.game_type === 'dots-and-boxes') {
+        const lines = container.querySelectorAll('.db-line');
+        lines.forEach(line => {
+            const idx = parseInt(line.dataset.lidx);
+            if (state.lines[idx]) line.classList.add('drawn');
+        });
+        state.boxes.forEach((ownerId, i) => {
+            const box = document.getElementById(`db-box-${i}`);
+            if (ownerId) {
+                box.classList.add(ownerId === game.player1_id ? 'captured-p1' : 'captured-p2');
+                box.textContent = ownerId === game.player1_id ? 'X' : 'O';
+            }
+        });
+    } else if (game.game_type === 'word-guess') {
+        const wordDisplay = document.getElementById('wg-display');
+        const keyboard = document.getElementById('wg-keyboard');
+        const indicator = document.getElementById('wg-indicator');
+        
+        wordDisplay.innerHTML = state.word.split('').map(l => `
+            <div class="wg-letter-blank">${state.guesses.includes(l) ? l : ''}</div>
+        `).join('');
+        
+        indicator.textContent = `Mistakes: ${state.wrong} / ${state.maxWrong}`;
+        
+        if (game.status === 'completed' && !game.winner_id) {
+            wordDisplay.innerHTML = state.word.split('').map(l => `
+                <div class="wg-letter-blank" style="color:var(--danger)">${l}</div>
+            `).join('');
+        }
+
+        const alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'.split('');
+        keyboard.innerHTML = alphabet.map(l => `
+            <div class="wg-key ${state.guesses.includes(l) ? 'guessed' : ''}" 
+                 onclick="makeMove(null,null,null,null,'${l}')">${l}</div>
+        `).join('');
     }
 
-    if (game.group_id) {
-        document.getElementById('p1-info').style.display = 'none';
-        document.getElementById('p2-info').style.display = 'none';
-        document.querySelector('.vs-badge').textContent = game.group_name;
-    } else {
-        document.getElementById('p1-info').style.display = 'flex';
-        document.getElementById('p2-info').style.display = 'flex';
-        document.querySelector('.vs-badge').textContent = 'VS';
-        document.getElementById('game-p1-name').textContent = game.player1_name;
-        document.getElementById('game-p2-name').textContent = game.player2_name;
-        setAvatar('game-p1-avatar', game.player1_name, game.player1_color);
-        setAvatar('game-p2-avatar', game.player2_name, game.player2_color);
-    }
+    document.getElementById('game-p1-name').textContent = game.player1_name;
+    document.getElementById('game-p2-name').textContent = game.player2_name;
+    setAvatar('game-p1-avatar', game.player1_name, game.player1_color);
+    setAvatar('game-p2-avatar', game.player2_name, game.player2_color);
 
     const indicator = document.getElementById('game-turn-indicator');
     if (game.status === 'active') {
@@ -1790,28 +1799,27 @@ function renderGameBoard(game) {
             const isP1 = currentUser.id === game.player1_id;
             const moved = isP1 ? state.p1_move : state.p2_move;
             indicator.textContent = moved ? "Waiting for Opponent..." : "Make your Move!";
-        } else if (game.game_type === 'quick-math') {
-            indicator.textContent = "First to solve wins!";
         } else {
             indicator.textContent = game.current_turn_id === currentUser.id ? "Your Turn!" : "Waiting for Opponent...";
         }
+    } else {
+        clearInterval(gamePollingInterval);
+        const isCoop = game.winner_id === 'coop';
+        const msg = game.status === 'draw' ? "It's a draw!" : 
+                   (isCoop ? "Team Victory! 🎉" : 
+                   (game.winner_id === currentUser.id ? "You Won! 🎉" : 
+                   (game.winner_id ? "You Lost! 💀" : "Game Over! 💀")));
+        indicator.textContent = msg;
+        document.getElementById('game-actions').style.display = 'block';
     }
 }
 
-window.submitMathAnswer = () => {
-    const input = document.getElementById('math-answer');
-    const answer = input.value;
-    if (!answer) return;
-    makeMove(null, null, null, answer);
-    input.value = '';
-};
-
-window.makeMove = async (index, col = null, move = null, answer = null) => {
+window.makeMove = async (index, col = null, move = null, lineIndex = null, letter = null) => {
     try {
         const res = await fetch(`${API_URL}/games/${currentGameId}/move`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-            body: JSON.stringify({ index, col, move, answer })
+            body: JSON.stringify({ index, col, move, lineIndex, letter })
         });
         if (res.ok) {
             pollGameState();

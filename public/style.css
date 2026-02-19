@@ -1724,11 +1724,80 @@ input:checked + .slider:before {
   border-radius: 50%;
 }
 
+/* Search Enhancements */
+.search-results-overlay {
+    position: absolute;
+    top: 50px;
+    left: 1rem;
+    right: 1rem;
+    max-height: 350px;
+    background: var(--bg-primary);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    box-shadow: var(--shadow-lg);
+    z-index: 1000;
+    overflow-y: auto;
+    animation: slideDown 0.2s ease;
+}
+
+.search-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 10px 14px;
+    border-bottom: 1px solid var(--border);
+    transition: background 0.2s;
+}
+
+.search-item:hover {
+    background: var(--bg-secondary);
+}
+
+.search-item:last-child {
+    border-bottom: none;
+}
+
+.search-box {
+    height: 42px !important;
+    padding: 0 10px !important;
+}
+
+.search-icon {
+    font-size: 1.2rem !important;
+}
+
+.icon-btn-sm {
+    width: 28px;
+    height: 28px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: none;
+    border: none;
+    color: var(--text-secondary);
+    cursor: pointer;
+    border-radius: 50%;
+    transition: background 0.2s;
+}
+
+.icon-btn-sm:hover {
+    background: var(--bg-tertiary);
+    color: var(--text-primary);
+}
+
+.icon-btn-sm .material-symbols-rounded {
+    font-size: 1.1rem;
+}
+
 .profile-tab-content {
     animation: fadeIn var(--transition-medium);
 }
 
 @keyframes fadeIn {
     from { opacity: 0; transform: translateY(10px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+@keyframes slideDown {
+    from { opacity: 0; transform: translateY(-10px); }
     to { opacity: 1; transform: translateY(0); }
 }

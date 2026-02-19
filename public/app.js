@@ -203,6 +203,7 @@ function showDashboard() {
 
     if (currentUser.role === 'admin') {
         document.getElementById('admin-btn').style.display = 'flex';
+        document.getElementById('admin-role-filter').style.display = 'block';
     }
 
     // Profile click
@@ -241,34 +242,68 @@ async function sendHeartbeat() {
 }
 
 // ============ SEARCH ============
-document.getElementById('search-btn').addEventListener('click', async () => {
-    const query = document.getElementById('user-search').value;
-    if (!query) return;
-    const res = await fetch(`${API_URL}/users/search?q=${query}`, {
-        headers: { 'Authorization': `Bearer ${token}` }
-    });
+window.performSearch = async () => {
+    const q = document.getElementById('user-search').value;
+    const online = document.getElementById('filter-online').value;
+    const role = document.getElementById('filter-role').value;
+    
+    if (!q && online === 'any' && !role) {
+        document.getElementById('search-results').style.display = 'none';
+        return;
+    }
+
+    let url = `${API_URL}/users/search?q=${q}`;
+    if (online !== 'any') url += `&online=${online}`;
+    if (role) url += `&role=${role}`;
+
+    const res = await fetch(url, { headers: { 'Authorization': `Bearer ${token}` } });
     const users = await res.json();
     const results = document.getElementById('search-results');
     results.style.display = 'block';
-    if (users.length === 0) results.innerHTML = '<div style="padding:1rem; color: var(--text-muted);">No users found</div>';
-    else results.innerHTML = users.map(u => `
-        <div class="search-item">
-            <div style="display:flex; align-items:center; gap:10px;">
-                <div class="avatar" style="width:32px; height:32px; font-size:0.8rem; background:${u.avatar_color || getAvatarColor(u.username)}">${u.username[0].toUpperCase()}</div>
-                <span>${u.username}</span>
+
+    if (users.length === 0) {
+        results.innerHTML = '<div style="padding:1rem; color: var(--text-muted); text-align:center;">No matching users found</div>';
+    } else {
+        results.innerHTML = users.map(u => `
+            <div class="search-item">
+                <div style="display:flex; align-items:center; gap:8px; overflow:hidden;">
+                    <div class="avatar" style="width:30px; height:30px; font-size:0.75rem; background:${u.avatar_color || getAvatarColor(u.username)}">
+                        ${u.username[0].toUpperCase()}
+                        ${u.is_online ? '<span class="online-dot"></span>' : ''}
+                    </div>
+                    <div style="display:flex; flex-direction:column; gap:2px;">
+                        <span style="font-size:0.85rem; font-weight:500;">${u.username}</span>
+                        ${u.role === 'admin' ? '<span class="role-badge admin" style="font-size:0.6rem; width:fit-content; padding:0 4px;">ADMIN</span>' : ''}
+                    </div>
+                </div>
+                <button class="btn-xs" style="padding: 2px 8px;" onclick="sendFriendRequest(${u.id})">Add</button>
             </div>
-            <button onclick="sendFriendRequest(${u.id})">Add</button>
-        </div>
-    `).join('');
+        `).join('');
+    }
+}
+
+document.getElementById('search-filter-btn').onclick = () => {
+    const panel = document.getElementById('search-filters-panel');
+    panel.style.display = panel.style.display === 'none' ? 'block' : 'none';
+};
+
+window.clearSearchFilters = () => {
+    document.getElementById('filter-online').value = 'any';
+    document.getElementById('filter-role').value = '';
+    document.getElementById('user-search').value = '';
+    performSearch();
+};
+
+// Auto-search on typing (debounce)
+let searchTimeout;
+document.getElementById('user-search').addEventListener('input', () => {
+    clearTimeout(searchTimeout);
+    searchTimeout = setTimeout(performSearch, 400);
 });
 
-// Enter key for search
-document.getElementById('user-search').addEventListener('keydown', (e) => {
-    if (e.key === 'Enter') document.getElementById('search-btn').click();
-});
-
+// Hide results when clicking outside
 document.addEventListener('click', (e) => {
-    if (!e.target.closest('.search-box')) {
+    if (!e.target.closest('.search-box') && !e.target.closest('#search-filters-panel')) {
         document.getElementById('search-results').style.display = 'none';
     }
 });

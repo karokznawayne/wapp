@@ -39,22 +39,55 @@ router.put('/profile', authenticateToken, async (req, res) => {
     }
 });
 
-// Search users (exclude blocked)
+// Search users (with filters and better relevance)
 router.get('/search', authenticateToken, async (req, res) => {
-    const { q } = req.query;
-    if (!q) return res.json([]);
+    const { q, online, role } = req.query;
+    // If no query and no filters, return nothing
+    if (!q && !online && !role) return res.json([]);
+    
     try {
-        // If caller is NOT admin, hide all admins
-        const roleFilter = req.user.role !== 'admin' ? "AND role != 'admin'" : "";
+        let sql = `
+            SELECT id, username, avatar_color, role, is_online, bio 
+            FROM users 
+            WHERE id != $1
+        `;
+        let params = [req.user.id];
+        let paramIndex = 2;
+
+        // Visibility Filter (Stealth Mode)
+        if (req.user.role !== 'admin') {
+            sql += ` AND role != 'admin'`;
+        } else if (role) {
+            sql += ` AND role = $${paramIndex++}`;
+            params.push(role);
+        }
+
+        if (q) {
+            sql += ` AND username ILIKE $${paramIndex++}`;
+            params.push(`%${q}%`);
+        }
+
+        if (online === 'true') {
+            sql += ` AND is_online = TRUE`;
+        } else if (online === 'false') {
+            sql += ` AND is_online = FALSE`;
+        }
+
+        // Exclude blocked
+        sql += ` AND id NOT IN (SELECT blocked_id FROM blocked_users WHERE blocker_id = $1)
+                 AND id NOT IN (SELECT blocker_id FROM blocked_users WHERE blocked_id = $1)`;
+
+        // Better search: Sort by (starts with) first, then (contains)
+        if (q) {
+            sql += ` ORDER BY (CASE WHEN username ILIKE $${paramIndex} THEN 0 ELSE 1 END), username ASC`;
+            params.push(`${q}%`);
+        } else {
+            sql += ` ORDER BY username ASC`;
+        }
         
-        const result = await db.query(`
-            SELECT id, username, avatar_color, role FROM users 
-            WHERE username ILIKE $1 AND id != $2 
-            ${roleFilter}
-            AND id NOT IN (SELECT blocked_id FROM blocked_users WHERE blocker_id = $2)
-            AND id NOT IN (SELECT blocker_id FROM blocked_users WHERE blocked_id = $2)
-            LIMIT 20
-        `, [`%${q}%`, req.user.id]);
+        sql += ` LIMIT 30`;
+
+        const result = await db.query(sql, params);
         res.json(result.rows);
     } catch (err) {
         res.status(500).json({ error: err.message });

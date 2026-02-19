@@ -112,11 +112,37 @@
                 
                 <div class="search-box">
                     <span class="material-symbols-rounded search-icon">search</span>
-                    <input type="text" id="user-search" placeholder="Search users...">
-                    <button id="search-btn" class="icon-btn-sm">
-                        <span class="material-symbols-rounded">arrow_forward</span>
+                    <input type="text" id="user-search" placeholder="Search usernames...">
+                    <button id="search-filter-btn" class="icon-btn-sm" title="Search Filters">
+                        <span class="material-symbols-rounded">filter_list</span>
                     </button>
-                    <div id="search-results" style="display: none;"></div>
+                    <div id="search-results" class="search-results-overlay glass" style="display: none;"></div>
+                </div>
+
+                <!-- Search Filters Panel -->
+                <div id="search-filters-panel" class="glass" style="display:none; margin: 0 1rem 10px 1rem; padding: 10px; border-radius:12px; border:1px solid var(--border); animation: slideDown 0.2s;">
+                    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
+                        <span style="font-size:0.7rem; font-weight:bold; color:var(--text-secondary);">SEARCH FILTERS</span>
+                        <button onclick="clearSearchFilters()" style="background:none; border:none; color:var(--accent); font-size:0.65rem; cursor:pointer; font-weight:600;">Clear</button>
+                    </div>
+                    <div style="display:flex; gap:10px; flex-wrap:wrap;">
+                        <div class="filter-group">
+                            <label style="font-size:0.65rem; color:var(--text-muted); display:block; margin-bottom:2px;">Status</label>
+                            <select id="filter-online" onchange="performSearch()" style="background:var(--bg-secondary); color:var(--text-primary); border:1px solid var(--border); border-radius:4px; font-size:0.75rem; padding:2px 4px; outline:none; width: 100px;">
+                                <option value="any">Any Status</option>
+                                <option value="true">Online</option>
+                                <option value="false">Offline</option>
+                            </select>
+                        </div>
+                        <div class="filter-group" id="admin-role-filter" style="display:none;">
+                            <label style="font-size:0.65rem; color:var(--text-muted); display:block; margin-bottom:2px;">Role</label>
+                            <select id="filter-role" onchange="performSearch()" style="background:var(--bg-secondary); color:var(--text-primary); border:1px solid var(--border); border-radius:4px; font-size:0.75rem; padding:2px 4px; outline:none; width: 80px;">
+                                <option value="">Any Role</option>
+                                <option value="user">User</option>
+                                <option value="admin">Admin</option>
+                            </select>
+                        </div>
+                    </div>
                 </div>
 
                 <div class="nav-section">

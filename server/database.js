@@ -44,7 +44,8 @@ const query = (text, params) => {
                             .replace(/JSONB/g, 'TEXT')
                             .replace(/TIMESTAMP/g, 'DATETIME')
                             .replace(/NOW\(\)/g, "CURRENT_TIMESTAMP")
-                            .replace(/ILIKE/g, "LIKE");
+                            .replace(/ILIKE/g, "LIKE")
+                            .replace(/\$(\d+)/g, '?'); // Convert $1, $2 to ? for sqlite3
 
             const isInsert = sql.trim().toUpperCase().startsWith('INSERT');
             const hasReturning = sql.toUpperCase().includes('RETURNING');

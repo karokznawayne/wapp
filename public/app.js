@@ -1321,19 +1321,33 @@ function setAvatar(elementId, username, color = null) {
     el.innerText = username[0].toUpperCase();
 }
 
+function formatDateLabel(timestamp) {
+    const date = new Date(timestamp);
+    const today = new Date();
+    const diffTime = Math.abs(today - date);
+    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+    
+    if (date.toDateString() === today.toDateString()) return 'Today';
+    if (diffDays === 1) return 'Yesterday';
+    if (diffDays < 7) return date.toLocaleDateString([], { weekday: 'long' });
+    return date.toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric' });
+}
+
+function truncate(str, len) {
+    if (!str) return '';
+    return str.length > len ? str.substring(0, len) + '...' : str;
+}
+
 function escapeHtml(str) {
+    if (!str) return '';
     const div = document.createElement('div');
     div.textContent = str;
     return div.innerHTML;
 }
 
 function escapeAttr(str) {
-    return String(str).replace(/'/g, "\\'").replace(/"/g, '\\"').replace(/\n/g, ' ');
-}
-
-function truncate(str, len) {
     if (!str) return '';
-    return str.length > len ? str.substring(0, len) + '...' : str;
+    return String(str).replace(/'/g, "&#39;").replace(/"/g, "&quot;");
 }
 
 // ============ PROFILE SETTINGS ============

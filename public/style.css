@@ -949,13 +949,14 @@ li.active::before {
 
 /* Input Form */
 #chat-input-form {
-    padding: 1rem 1.5rem;
+    padding: 0.75rem 1.25rem;
     background: var(--bg-secondary);
     border-top: 1px solid var(--border);
-    display: flex;
-    flex-wrap: nowrap;
-    align-items: center;
-    gap: 0.5rem;
+    display: flex !important;
+    flex-direction: row !important;
+    flex-wrap: nowrap !important;
+    align-items: center !important;
+    gap: 0.65rem;
     position: relative;
     z-index: 100;
 }
@@ -1841,27 +1842,9 @@ input:checked + .slider:before {
     font-size: 1.2rem !important;
 }
 
-.icon-btn-sm {
-    width: 28px;
-    height: 28px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    background: none;
-    border: none;
-    color: var(--text-secondary);
-    cursor: pointer;
-    border-radius: 50%;
-    transition: background 0.2s;
-}
-
-.icon-btn-sm:hover {
-    background: var(--bg-tertiary);
-    color: var(--text-primary);
-}
-
+/* Cleaned up duplicate icon-btn-sm */
 .icon-btn-sm .material-symbols-rounded {
-    font-size: 1.1rem;
+    font-size: 1.2rem;
 }
 
 .profile-tab-content {

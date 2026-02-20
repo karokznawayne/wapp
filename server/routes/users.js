@@ -246,4 +246,22 @@ router.get('/typing', authenticateToken, async (req, res) => {
     }
 });
 
+// Get Gaming Leaderboard
+router.get('/leaderboard', authenticateToken, async (req, res) => {
+    try {
+        const sql = `
+            SELECT u.id, u.username, u.avatar_color, 
+            (SELECT COUNT(*) FROM games WHERE winner_id = u.id AND status = 'completed') as wins
+            FROM users u
+            WHERE u.role != 'admin'
+            ORDER BY wins DESC
+            LIMIT 10
+        `;
+        const result = await db.query(sql);
+        res.json(result.rows);
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
 module.exports = router;

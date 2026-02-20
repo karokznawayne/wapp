@@ -83,6 +83,8 @@ function initializeSchema() {
             ALTER TABLE messages ADD COLUMN IF NOT EXISTS reply_to_id INTEGER REFERENCES messages(id);
             ALTER TABLE messages ADD COLUMN IF NOT EXISTS deleted BOOLEAN DEFAULT FALSE;
             ALTER TABLE messages ADD COLUMN IF NOT EXISTS deleted_for_everyone BOOLEAN DEFAULT FALSE;
+            ALTER TABLE messages ADD COLUMN IF NOT EXISTS message_type VARCHAR(20) DEFAULT 'text';
+            ALTER TABLE messages ADD COLUMN IF NOT EXISTS media_url TEXT;
         END $$`,
         // Friendships
         `CREATE TABLE IF NOT EXISTS friendships (
@@ -141,6 +143,43 @@ function initializeSchema() {
             guest_id INTEGER REFERENCES users(id),
             status VARCHAR(20) DEFAULT 'pending',
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )`,
+        // Social Wall Posts
+        `CREATE TABLE IF NOT EXISTS posts (
+            id SERIAL PRIMARY KEY,
+            user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+            content TEXT NOT NULL,
+            media_url VARCHAR(255),
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )`,
+        // Post Likes
+        `CREATE TABLE IF NOT EXISTS post_likes (
+            id SERIAL PRIMARY KEY,
+            post_id INTEGER REFERENCES posts(id) ON DELETE CASCADE,
+            user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE(post_id, user_id)
+        )`,
+        // Polls
+        `CREATE TABLE IF NOT EXISTS polls (
+            id SERIAL PRIMARY KEY,
+            message_id INTEGER REFERENCES messages(id) ON DELETE CASCADE,
+            question TEXT NOT NULL,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )`,
+        // Poll Options
+        `CREATE TABLE IF NOT EXISTS poll_options (
+            id SERIAL PRIMARY KEY,
+            poll_id INTEGER REFERENCES polls(id) ON DELETE CASCADE,
+            option_text TEXT NOT NULL
+        )`,
+        // Poll Votes
+        `CREATE TABLE IF NOT EXISTS poll_votes (
+            id SERIAL PRIMARY KEY,
+            poll_id INTEGER REFERENCES polls(id) ON DELETE CASCADE,
+            option_id INTEGER REFERENCES poll_options(id) ON DELETE CASCADE,
+            user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+            UNIQUE(poll_id, user_id)
         )`
     ];
 

@@ -16,7 +16,9 @@ app.use('/api/users', require('./routes/users'));
 app.use('/api/groups', require('./routes/groups'));
 app.use('/api/messages', require('./routes/messages'));
 app.use('/api/admin', require('./routes/admin'));
-app.use('/api/games', require('./routes/games')); // Protected by isAdmin middleware inside
+app.use('/api/games', require('./routes/games')); 
+app.use('/api/posts', require('./routes/posts'));
+app.use('/api/polls', require('./routes/polls'));
 
 // Serve Static Files (Frontend)
 app.use(express.static(path.join(__dirname, '../public')));

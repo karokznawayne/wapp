@@ -1971,6 +1971,239 @@ input:checked + .slider:before {
     to { opacity: 1; transform: translateY(0); }
 }
 
+/* Social Wall Post */
+.post-card {
+    background: var(--bg-tertiary);
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    padding: 1.5rem;
+    margin-bottom: 1.5rem;
+    transition: transform 0.2s, border-color 0.2s;
+}
+
+.post-card:hover {
+    border-color: var(--accent-subtle);
+    transform: translateY(-2px);
+}
+
+.post-header {
+    display: flex;
+    justify-content: space-between;
+    margin-bottom: 1rem;
+}
+
+.post-user {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.post-time {
+    font-size: 0.75rem;
+    color: var(--text-muted);
+}
+
+.post-content {
+    font-size: 1rem;
+    line-height: 1.5;
+    color: var(--text-primary);
+    margin-bottom: 1.25rem;
+    white-space: pre-wrap;
+}
+
+.post-actions {
+    display: flex;
+    gap: 20px;
+    padding-top: 1rem;
+    border-top: 1px solid var(--border);
+}
+
+.post-action-btn {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    background: none;
+    border: none;
+    color: var(--text-secondary);
+    font-size: 0.9rem;
+    cursor: pointer;
+    transition: color 0.2s;
+}
+
+.post-action-btn:hover {
+    color: var(--accent);
+}
+
+.post-action-btn.active {
+    color: var(--accent);
+}
+
+.post-action-btn i {
+    font-size: 18px;
+}
+
+/* Leaderboard */
+.leaderboard-item {
+    display: flex;
+    align-items: center;
+    gap: 15px;
+    padding: 1rem;
+    background: var(--bg-secondary);
+    border-radius: 12px;
+    margin-bottom: 0.75rem;
+    border: 1px solid var(--border);
+}
+
+.rank-circle {
+    width: 30px;
+    height: 30px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: 800;
+    font-size: 0.8rem;
+    background: var(--bg-tertiary);
+}
+
+.rank-1 { background: #ffd700; color: #000; }
+.rank-2 { background: #c0c0c0; color: #000; }
+.rank-3 { background: #cd7f32; color: #000; }
+
+.lb-user-info {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.lb-stats {
+    text-align: right;
+}
+
+.lb-wins {
+    font-size: 1.1rem;
+    font-weight: 700;
+    color: var(--accent);
+}
+
+.lb-label {
+    font-size: 0.7rem;
+    color: var(--text-muted);
+    text-transform: uppercase;
+}
+
+/* Multimedia Messages */
+.msg-image {
+    max-width: 100%;
+    max-height: 300px;
+    border-radius: 12px;
+    cursor: pointer;
+    display: block;
+    margin: 5px 0;
+    transition: opacity 0.2s;
+}
+
+.msg-image:hover {
+    opacity: 0.9;
+}
+
+.msg-voice {
+    max-width: 240px;
+    height: 40px;
+    margin: 5px 0;
+    border-radius: 20px;
+}
+
+.media-msg {
+    padding: 10px !important;
+}
+
+.recording-pulse {
+    width: 12px;
+    height: 12px;
+    background: #ff4444;
+    border-radius: 50%;
+    animation: recording-glow 1s infinite;
+}
+
+@keyframes recording-glow {
+    0% { box-shadow: 0 0 0 0 rgba(255, 68, 68, 0.7); }
+    70% { box-shadow: 0 0 0 10px rgba(255, 68, 68, 0); }
+    100% { box-shadow: 0 0 0 0 rgba(255, 68, 68, 0); }
+}
+
+[data-theme="light"] audio {
+    filter: invert(0);
+}
+
+audio {
+    filter: invert(1);
+}
+
+/* Polls */
+.poll-card {
+    background: var(--bg-secondary);
+    border-radius: 12px;
+    padding: 1rem;
+    margin: 8px 0;
+    width: 100%;
+    max-width: 300px;
+    border: 1px solid var(--border);
+}
+
+.poll-question {
+    font-weight: 700;
+    margin-bottom: 1rem;
+    color: var(--text-primary);
+}
+
+.poll-option {
+    margin-bottom: 8px;
+    cursor: pointer;
+}
+
+.poll-option-inner {
+    position: relative;
+    padding: 10px;
+    background: var(--bg-tertiary);
+    border-radius: 8px;
+    border: 1px solid var(--border);
+    overflow: hidden;
+    transition: transform 0.1s;
+}
+
+.poll-option-inner:hover {
+    border-color: var(--accent-subtle);
+}
+
+.poll-option-inner:active {
+    transform: scale(0.98);
+}
+
+.poll-progress {
+    position: absolute;
+    left: 0;
+    top: 0;
+    height: 100%;
+    background: var(--accent-subtle);
+    z-index: 1;
+    transition: width 0.3s ease;
+}
+
+.poll-text-row {
+    position: relative;
+    z-index: 2;
+    display: flex;
+    justify-content: space-between;
+    font-size: 0.9rem;
+}
+
+.poll-option-inner.voted {
+    border-color: var(--accent);
+    background: hsla(var(--accent-h), var(--accent-s), var(--accent-l), 0.05);
+}
+
 [data-theme="light"] {
     --bg-primary: #f9fafb;
     --bg-secondary: #f3f4f6;

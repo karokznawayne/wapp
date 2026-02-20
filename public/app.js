@@ -9,6 +9,12 @@ let lastMsgCount = 0;
 let replyingTo = null; // { id, sender, content }
 let currentTheme = localStorage.getItem('theme') || 'dark';
 
+// Recording State
+let mediaRecorder;
+let audioChunks = [];
+let recordingStartTime;
+let recordingTimerInterval;
+
 // DOM Elements
 const authContainer = document.getElementById('auth-container');
 const dashboardContainer = document.getElementById('dashboard-container');
@@ -472,6 +478,7 @@ document.getElementById('confirm-create-group').onclick = async () => {
 
 // ============ OPEN CHAT ============
 window.openChat = async (type, id, name) => {
+    switchMainView('chat');
     activeChat = { type, id, name };
     replyingTo = null;
     hideReplyBar();
@@ -633,14 +640,26 @@ async function loadMessages(isPoll = false) {
                     </div>`;
                 }
 
-                // Deleted message
-                const content = m.deleted_for_everyone ? `<em style="opacity:0.6">🚫 This message was deleted</em>` : escapeHtml(m.content);
+                // Message content rendering
+                let contentHtml = '';
+                if (m.deleted_for_everyone) {
+                    contentHtml = `<em style="opacity:0.6">🚫 This message was deleted</em>`;
+                } else if (m.message_type === 'image') {
+                    contentHtml = `<img src="${m.media_url}" class="msg-image" onclick="window.open('${m.media_url}', '_blank')">`;
+                    if (m.content) contentHtml += `<div style="margin-top:5px;">${escapeHtml(m.content)}</div>`;
+                } else if (m.message_type === 'voice') {
+                    contentHtml = `<audio controls class="msg-voice"><source src="${m.media_url}" type="audio/webm"></audio>`;
+                } else if (m.message_type === 'poll') {
+                    contentHtml = renderPoll(m.poll_data);
+                } else {
+                    contentHtml = `<div>${escapeHtml(m.content)}</div>`;
+                }
 
                 html += `<div class="message ${isMe ? 'sent' : 'received'}" id="msg-${m.id}" 
                               oncontextmenu="showMessageMenu(event, ${m.id}, ${isMe}, '${escapeAttr(m.content)}', '${m.sender}')">
                     ${!isMe && activeChat.type === 'group' ? `<div class="message-sender">${m.sender}</div>` : ''}
                     ${replyHtml}
-                    <div>${content}</div>
+                    ${contentHtml}
                     <div class="message-info">
                         <span>${time}</span>
                         ${ticks}
@@ -1741,3 +1760,335 @@ window.makeMove = async (index, col = null, move = null) => {
         }
     } catch (e) {}
 };
+
+// ============ NAVIGATION & VIEWS ============
+function switchMainView(view) {
+    const list = ['chat-header', 'chat-messages', 'chat-input-form', 'social-wall-view', 'leaderboard-view'];
+    list.forEach(id => {
+        const el = document.getElementById(id);
+        if (el) el.style.display = 'none';
+    });
+
+    if (view === 'chat') {
+        if (activeChat) {
+            document.getElementById('chat-header').style.display = 'flex';
+            document.getElementById('chat-messages').style.display = 'block';
+            document.getElementById('chat-input-form').style.display = 'flex';
+        } else {
+            document.getElementById('chat-messages').style.display = 'block';
+        }
+    } else if (view === 'social-wall') {
+        document.getElementById('social-wall-view').style.display = 'flex';
+        activeChat = null; // Deselect chat in UI
+        document.querySelectorAll('.chat-item-container').forEach(i => i.classList.remove('active'));
+    } else if (view === 'leaderboard') {
+        document.getElementById('leaderboard-view').style.display = 'flex';
+        activeChat = null;
+        document.querySelectorAll('.chat-item-container').forEach(i => i.classList.remove('active'));
+    }
+}
+
+// ============ SOCIAL WALL & LEADERBOARD ============
+window.openSocialWall = () => {
+    switchMainView('social-wall');
+    fetchPosts();
+};
+
+window.openLeaderboard = () => {
+    switchMainView('leaderboard');
+    fetchLeaderboard();
+};
+
+async function fetchPosts() {
+    const container = document.getElementById('posts-container');
+    container.innerHTML = '<div style="text-align:center; padding: 2rem; color:var(--text-muted);">Fetching the wall...</div>';
+    
+    try {
+        const res = await fetch(`${API_URL}/posts`, { headers: { 'Authorization': `Bearer ${token}` } });
+        const posts = await res.json();
+        
+        if (posts.length === 0) {
+            container.innerHTML = '<div class="glass" style="padding: 2rem; border-radius: 16px; text-align: center; color:var(--text-muted);">The wall is currently empty. Be the first to share something!</div>';
+            return;
+        }
+
+        container.innerHTML = posts.map(p => `
+            <div class="post-card glass">
+                <div class="post-header">
+                    <div class="post-user">
+                        <div class="avatar-sm" style="background:${p.avatar_color || getAvatarColor(p.username)}">${p.username[0].toUpperCase()}</div>
+                        <div>
+                            <div style="font-weight:700; font-size: 0.95rem;">${p.username}</div>
+                            <div class="post-time">${new Date(p.created_at).toLocaleString()}</div>
+                        </div>
+                    </div>
+                    ${(p.user_id === currentUser.id || currentUser.role === 'admin') ? 
+                        `<button class="icon-btn-sm" onclick="deletePost(${p.id})" title="Delete Post" style="opacity:0.6; hover:opacity:1;"><span class="material-symbols-rounded" style="font-size:18px;">delete</span></button>` : ''}
+                </div>
+                <div class="post-content">${p.content}</div>
+                <div class="post-actions">
+                    <button class="post-action-btn ${p.is_liked ? 'active' : ''}" onclick="likePost(${p.id})">
+                        <span class="material-symbols-rounded" style="font-size: 20px;">${p.is_liked ? 'favorite' : 'favorite_border'}</span>
+                        <span style="font-weight:600;">${p.likes_count}</span>
+                    </button>
+                    <!-- Future: Comment Button -->
+                </div>
+            </div>
+        `).join('');
+    } catch (e) {
+        container.innerHTML = '<div style="text-align:center; padding: 2rem; color:var(--danger);">Failed to load posts.</div>';
+    }
+}
+
+window.createPost = async () => {
+    const input = document.getElementById('post-input');
+    const content = input.value.trim();
+    if (!content) return;
+
+    try {
+        const res = await fetch(`${API_URL}/posts`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+            body: JSON.stringify({ content })
+        });
+        if (res.ok) {
+            input.value = '';
+            fetchPosts();
+            showToast('Wall', 'Post shared! ✨');
+        }
+    } catch (e) { showToast('Error', 'Failed to share post'); }
+};
+
+window.likePost = async (id) => {
+    try {
+        const res = await fetch(`${API_URL}/posts/${id}/like`, {
+            method: 'POST',
+            headers: { 'Authorization': `Bearer ${token}` }
+        });
+        if (res.ok) fetchPosts();
+    } catch (e) {}
+};
+
+window.deletePost = async (id) => {
+    if (!confirm('Are you sure you want to delete this post?')) return;
+    try {
+        const res = await fetch(`${API_URL}/posts/${id}`, {
+            method: 'DELETE',
+            headers: { 'Authorization': `Bearer ${token}` }
+        });
+        if (res.ok) {
+            fetchPosts();
+            showToast('Wall', 'Post deleted');
+        }
+    } catch (e) {}
+};
+
+async function fetchLeaderboard() {
+    const list = document.getElementById('leaderboard-list');
+    list.innerHTML = '<div style="text-align:center; padding: 2rem; color:var(--text-muted);">Measuring legends...</div>';
+    
+    try {
+        const res = await fetch(`${API_URL}/users/leaderboard`, { headers: { 'Authorization': `Bearer ${token}` } });
+        const data = await res.json();
+        
+        if (data.length === 0) {
+            list.innerHTML = '<div class="glass" style="padding: 2rem; border-radius: 16px; text-align: center; color:var(--text-muted);">No wins recorded yet. Time to start a game!</div>';
+            return;
+        }
+
+        list.innerHTML = data.map((u, i) => `
+            <div class="leaderboard-item glass" style="animation: slideDown ${0.1 * (i+1)}s ease;">
+                <div class="rank-circle rank-${i+1}">${i+1}</div>
+                <div class="lb-user-info">
+                    <div class="avatar-sm" style="background:${u.avatar_color || getAvatarColor(u.username)}">${u.username[0].toUpperCase()}</div>
+                    <span style="font-weight:700; color:var(--text-primary);">${u.username}</span>
+                </div>
+                <div class="lb-stats">
+                    <div class="lb-wins">${u.wins}</div>
+                    <div class="lb-label">Total Wins</div>
+                </div>
+            </div>
+        `).join('');
+    } catch (e) {
+         list.innerHTML = '<div style="text-align:center; padding: 2rem; color:var(--danger);">Failed to load leaderboard.</div>';
+    }
+}
+// ============ MULTIMEDIA: IMAGES & VOICE ============
+window.triggerImageUpload = () => document.getElementById('image-upload-input').click();
+
+window.handleImageUpload = async (event) => {
+    const file = event.target.files[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = async (e) => {
+        const base64 = e.target.result;
+        sendMultimediaMessage('image', base64);
+    };
+    reader.readAsDataURL(file);
+    event.target.value = ''; // Reset
+};
+
+async function sendMultimediaMessage(type, url, content = '') {
+    if (!activeChat) return;
+    const body = { messageType: type, mediaUrl: url, content };
+    if (activeChat.type === 'group') body.groupId = activeChat.id;
+    else body.receiverId = activeChat.id;
+
+    try {
+        await fetch(`${API_URL}/messages`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+            body: JSON.stringify(body)
+        });
+        loadMessages();
+    } catch (e) { showToast('Error', 'Failed to send'); }
+}
+
+// Voice Recording Logic
+setTimeout(() => {
+    const voiceBtn = document.getElementById('voice-record-btn');
+    if (voiceBtn) {
+        voiceBtn.onmousedown = startRecording;
+        voiceBtn.onmouseup = stopRecording;
+        voiceBtn.ontouchstart = (e) => { e.preventDefault(); startRecording(); };
+        voiceBtn.ontouchend = (e) => { e.preventDefault(); stopRecording(); };
+    }
+}, 1000);
+
+async function startRecording() {
+    try {
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        mediaRecorder = new MediaRecorder(stream);
+        audioChunks = [];
+        
+        mediaRecorder.ondataavailable = (e) => audioChunks.push(e.data);
+        mediaRecorder.onstop = async () => {
+            const blob = new Blob(audioChunks, { type: 'audio/webm' });
+            const reader = new FileReader();
+            reader.onloadend = () => sendMultimediaMessage('voice', reader.result);
+            reader.readAsDataURL(blob);
+            stream.getTracks().forEach(t => t.stop());
+        };
+
+        mediaRecorder.start();
+        recordingStartTime = Date.now();
+        document.getElementById('recording-indicator').style.display = 'flex';
+        updateRecordingTimer();
+        recordingTimerInterval = setInterval(updateRecordingTimer, 1000);
+        
+        // Visual feedback
+        document.getElementById('voice-record-btn').style.color = 'var(--danger)';
+    } catch (err) {
+        showToast('Error', 'Microphone access denied');
+    }
+}
+
+function stopRecording() {
+    if (mediaRecorder && mediaRecorder.state === 'recording') {
+        mediaRecorder.stop();
+        document.getElementById('recording-indicator').style.display = 'none';
+        clearInterval(recordingTimerInterval);
+        document.getElementById('voice-record-btn').style.color = '';
+    }
+}
+
+function updateRecordingTimer() {
+    const elapsed = Math.floor((Date.now() - recordingStartTime) / 1000);
+    const m = Math.floor(elapsed / 60);
+    const s = elapsed % 60;
+    const timerEl = document.getElementById('recording-timer');
+    if (timerEl) timerEl.textContent = `${m}:${s < 10 ? '0' : ''}${s}`;
+}
+
+// Helper to truncate text for reply previews
+function truncate(str, n) {
+    return (str.length > n) ? str.substr(0, n-1) + '&hellip;' : str;
+}
+// ============ POLLS ============
+window.openPollCreator = () => {
+    document.getElementById('poll-modal-overlay').style.display = 'flex';
+    document.getElementById('poll-question').value = '';
+    const container = document.getElementById('poll-options-container');
+    container.innerHTML = `
+        <input type="text" class="poll-option-input glass" placeholder="Option 1" style="width:100%; padding:10px; border-radius:10px; margin-bottom:10px; border:1px solid var(--border); background:var(--bg-secondary); color:var(--text-primary); outline:none;">
+        <input type="text" class="poll-option-input glass" placeholder="Option 2" style="width:100%; padding:10px; border-radius:10px; margin-bottom:10px; border:1px solid var(--border); background:var(--bg-secondary); color:var(--text-primary); outline:none;">
+    `;
+};
+
+window.addPollOptionField = () => {
+    const container = document.getElementById('poll-options-container');
+    const input = document.createElement('input');
+    input.type = 'text';
+    input.className = 'poll-option-input glass';
+    input.placeholder = `Option ${container.children.length + 1}`;
+    input.style = "width:100%; padding:10px; border-radius:10px; margin-bottom:10px; border:1px solid var(--border); background:var(--bg-secondary); color:var(--text-primary); outline:none;";
+    container.appendChild(input);
+};
+
+window.submitPoll = async () => {
+    const question = document.getElementById('poll-question').value.trim();
+    const optionInputs = document.querySelectorAll('.poll-option-input');
+    const options = Array.from(optionInputs).map(i => i.value.trim()).filter(v => v !== '');
+
+    if (!question || options.length < 2) {
+        showToast('Error', 'Question and at least 2 options required');
+        return;
+    }
+
+    const body = { question, options };
+    if (activeChat.type === 'group') body.groupId = activeChat.id;
+    else body.receiverId = activeChat.id;
+
+    try {
+        const res = await fetch(`${API_URL}/polls`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+            body: JSON.stringify(body)
+        });
+        if (res.ok) {
+            document.getElementById('poll-modal-overlay').style.display = 'none';
+            loadMessages();
+            showToast('Poll', 'Poll created! 📊');
+        }
+    } catch (e) { showToast('Error', 'Failed to create poll'); }
+};
+
+window.castVote = async (pollId, optionId) => {
+    try {
+        const res = await fetch(`${API_URL}/polls/${pollId}/vote`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+            body: JSON.stringify({ optionId })
+        });
+        if (res.ok) loadMessages();
+    } catch (e) {}
+};
+
+function renderPoll(poll) {
+    if (!poll) return '';
+    const totalVotes = poll.options.reduce((sum, opt) => sum + parseInt(opt.votes), 0);
+    
+    return `
+        <div class="poll-card">
+            <div class="poll-question">${escapeHtml(poll.question)}</div>
+            <div class="poll-options">
+                ${poll.options.map(opt => {
+                    const percent = totalVotes > 0 ? Math.round((opt.votes / totalVotes) * 100) : 0;
+                    return `
+                        <div class="poll-option" onclick="castVote(${poll.id}, ${opt.id})">
+                            <div class="poll-option-inner ${opt.voted ? 'voted' : ''}">
+                                <div class="poll-progress" style="width: ${percent}%"></div>
+                                <div class="poll-text-row">
+                                    <span>${escapeHtml(opt.text)}</span>
+                                    <span>${percent}% (${opt.votes})</span>
+                                </div>
+                            </div>
+                        </div>
+                    `;
+                }).join('')}
+            </div>
+            <div style="font-size: 0.75rem; color: var(--text-muted); margin-top: 10px; text-align:right;">${totalVotes} votes total</div>
+        </div>
+    `;
+}

@@ -3,16 +3,16 @@ const router = express.Router();
 const db = require('../database');
 const { authenticateToken } = require('../middleware/auth');
 
-// Send Message (with reply support)
+// Send Message (with multimedia support)
 router.post('/', authenticateToken, async (req, res) => {
-    const { receiverId, groupId, content, replyToId } = req.body;
+    const { receiverId, groupId, content, replyToId, messageType, mediaUrl } = req.body;
 
-    if (!content) return res.status(400).json({ error: 'Content required' });
+    if (!content && !mediaUrl) return res.status(400).json({ error: 'Content or Media required' });
 
     try {
         const result = await db.query(
-            'INSERT INTO messages (sender_id, receiver_id, group_id, content, read_status, reply_to_id) VALUES ($1, $2, $3, $4, FALSE, $5) RETURNING id, timestamp, read_status',
-            [req.user.id, receiverId || null, groupId || null, content, replyToId || null]
+            'INSERT INTO messages (sender_id, receiver_id, group_id, content, read_status, reply_to_id, message_type, media_url) VALUES ($1, $2, $3, $4, FALSE, $5, $6, $7) RETURNING id, timestamp, read_status',
+            [req.user.id, receiverId || null, groupId || null, content || '', replyToId || null, messageType || 'text', mediaUrl || null]
         );
         const row = result.rows[0];
 
@@ -29,7 +29,7 @@ router.post('/', authenticateToken, async (req, res) => {
     }
 });
 
-// Get Messages (with reactions and reply data)
+// Get Messages (with multimedia fields)
 router.get('/', authenticateToken, async (req, res) => {
     const { userId, groupId } = req.query;
 
@@ -37,8 +37,20 @@ router.get('/', authenticateToken, async (req, res) => {
         let sql = `
             SELECT m.id, m.content, m.timestamp, m.read_status as is_read, 
                    m.sender_id, u.username as sender, m.deleted, m.deleted_for_everyone,
-                   m.reply_to_id,
+                   m.reply_to_id, m.message_type, m.media_url,
                    rm.content as reply_content, ru.username as reply_sender,
+                   (SELECT json_build_object(
+                       'id', p.id, 
+                       'question', p.question, 
+                       'options', (
+                           SELECT json_agg(json_build_object(
+                               'id', po.id, 
+                               'text', po.option_text, 
+                               'votes', (SELECT COUNT(*) FROM poll_votes WHERE option_id = po.id),
+                               'voted', EXISTS(SELECT 1 FROM poll_votes WHERE option_id = po.id AND user_id = $1)
+                           )) FROM poll_options po WHERE po.poll_id = p.id
+                       )
+                   ) FROM polls p WHERE p.message_id = m.id) as poll_data,
                    COALESCE(
                        (SELECT json_agg(json_build_object('emoji', r.emoji, 'username', ru2.username, 'user_id', r.user_id))
                         FROM reactions r JOIN users ru2 ON ru2.id = r.user_id WHERE r.message_id = m.id), '[]'

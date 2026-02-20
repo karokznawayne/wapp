@@ -505,6 +505,7 @@ window.openChat = async (type, id, name) => {
     // For mobile
     document.getElementById('main-chat-area').classList.add('open');
     document.getElementById('back-btn').style.display = 'flex';
+    document.body.classList.add('chat-active');
 
     // Group Info Button
     const groupInfoBtn = document.getElementById('group-info-btn');
@@ -514,11 +515,9 @@ window.openChat = async (type, id, name) => {
         document.getElementById('chat-subtitle').textContent = 'tap ℹ️ for group info';
     } else {
         groupInfoBtn.style.display = 'none';
-        // Show online status
         updateChatSubtitle(id);
     }
 
-    // Mark as read
     if (type === 'user') {
         await markAsRead(id);
     }
@@ -555,6 +554,7 @@ function formatLastSeen(date) {
 // Mobile Back Button
 document.getElementById('back-btn').onclick = () => {
     document.getElementById('main-chat-area').classList.remove('open');
+    document.body.classList.remove('chat-active');
     activeChat = null;
     loadChats();
 };
@@ -1763,28 +1763,42 @@ window.makeMove = async (index, col = null, move = null) => {
 
 // ============ NAVIGATION & VIEWS ============
 function switchMainView(view) {
-    const list = ['chat-header', 'chat-messages', 'chat-input-form', 'social-wall-view', 'leaderboard-view'];
+    const list = ['chat-header', 'chat-messages', 'chat-input-form', 'social-wall-view', 'leaderboard-view', 'game-hub-view'];
     list.forEach(id => {
         const el = document.getElementById(id);
         if (el) el.style.display = 'none';
     });
 
+    // Mobile: Show main area
+    document.getElementById('main-chat-area').classList.add('open');
+    document.body.classList.add('chat-active');
+    document.getElementById('back-btn').style.display = 'flex';
+
     if (view === 'chat') {
         if (activeChat) {
             document.getElementById('chat-header').style.display = 'flex';
-            document.getElementById('chat-messages').style.display = 'block';
+            document.getElementById('chat-messages').style.display = 'flex';
             document.getElementById('chat-input-form').style.display = 'flex';
         } else {
-            document.getElementById('chat-messages').style.display = 'block';
+            document.getElementById('chat-messages').style.display = 'flex';
+            // On mobile if no chat, maybe show back button or just hide
+            if (!activeChat) {
+                document.getElementById('main-chat-area').classList.remove('open');
+                document.body.classList.remove('chat-active');
+            }
         }
     } else if (view === 'social-wall') {
         document.getElementById('social-wall-view').style.display = 'flex';
-        activeChat = null; // Deselect chat in UI
+        activeChat = null;
         document.querySelectorAll('.chat-item-container').forEach(i => i.classList.remove('active'));
     } else if (view === 'leaderboard') {
         document.getElementById('leaderboard-view').style.display = 'flex';
         activeChat = null;
         document.querySelectorAll('.chat-item-container').forEach(i => i.classList.remove('active'));
+    } else if (view === 'game-hub') {
+        const gameHub = document.getElementById('game-hub-view');
+        if (gameHub) gameHub.style.display = 'flex';
+        activeChat = null;
     }
 }
 

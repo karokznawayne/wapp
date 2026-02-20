@@ -2300,3 +2300,168 @@ audio {
     --msg-received: #f1f5f9;
     --msg-received-text: #0f172a;
 }
+
+/* ============ RESPONSIVE DESIGN ============ */
+
+/* Tablet & Mobile (< 768px) */
+@media (max-width: 768px) {
+    #dashboard-container {
+        flex-direction: column;
+    }
+
+    .sidebar {
+        width: 100% !important;
+        min-width: 100% !important;
+        height: 100vh;
+        border-right: none;
+    }
+
+    .main-chat {
+        display: none !important;
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        z-index: 1000;
+        background: var(--bg-primary);
+    }
+
+    .main-chat.open {
+        display: flex !important;
+    }
+
+    #back-btn {
+        display: flex !important;
+        align-items: center;
+        justify-content: center;
+        width: 40px;
+        height: 40px;
+        margin-right: 8px;
+        cursor: pointer;
+        color: var(--text-secondary);
+        background: var(--bg-hover);
+        border-radius: var(--radius-sm);
+    }
+
+    /* Auth Screen */
+    .auth-card {
+        margin: 1.25rem;
+        padding: 1.75rem;
+        max-width: calc(100% - 2.5rem);
+    }
+
+    /* Modals */
+    .modal-content {
+        width: 95% !important;
+        max-width: 95vw !important;
+        padding: 1.5rem !important;
+        margin: 10px;
+        max-height: 90vh;
+        overflow-y: auto;
+    }
+
+    /* Message Bubbles */
+    .message {
+        max-width: 88%;
+        font-size: 0.875rem;
+    }
+
+    /* Social Wall */
+    #wall-feed {
+        padding: 1rem !important;
+    }
+
+    .post-card {
+        padding: 1.25rem;
+    }
+
+    /* Games Hub */
+    .game-grid {
+        grid-template-columns: 1fr;
+        gap: 1rem;
+    }
+
+    .game-board-card {
+        min-width: 95vw !important;
+        padding: 1rem !important;
+    }
+
+    .tic-tac-toe-grid {
+        width: 100%;
+        max-width: 280px;
+    }
+
+    .connect-four-grid {
+        width: 100%;
+        max-width: 100%;
+        gap: 4px;
+        padding: 5px;
+    }
+
+    /* Input Form */
+    #chat-input-form {
+        padding: 0.75rem 1rem;
+        gap: 0.4rem;
+    }
+
+    #message-input {
+        font-size: 0.875rem;
+        padding: 0.65rem 1rem;
+    }
+
+    .icon-btn-sm {
+        width: 32px;
+        height: 32px;
+    }
+
+    .send-btn {
+        width: 40px;
+        height: 40px;
+    }
+
+    .search-results-overlay {
+        position: fixed;
+        top: 60px;
+        left: 10px;
+        right: 10px;
+        max-height: 80vh;
+        width: calc(100% - 20px);
+    }
+}
+
+/* Very Small Screens (< 480px) */
+@media (max-width: 480px) {
+    .sidebar-branding h2 {
+        font-size: 1rem;
+    }
+
+    .header-actions {
+        gap: 2px;
+    }
+
+    .icon-btn {
+        width: 32px;
+        height: 32px;
+    }
+
+    .header-actions .icon-btn .material-symbols-rounded {
+        font-size: 18px;
+    }
+
+    #chat-header {
+        padding: 0.5rem 1rem;
+    }
+
+    .avatar-sm {
+        width: 28px;
+        height: 28px;
+    }
+}
+
+/* Fix for Safari Mobile viewport height */
+@supports (-webkit-touch-callout: none) {
+    body, #app, #dashboard-container, .sidebar {
+        height: -webkit-fill-available;
+    }
+}
